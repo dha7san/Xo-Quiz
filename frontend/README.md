@@ -1,4 +1,4 @@
-# Symposium Quiz Application - Frontend
+# Symposium Quiz Application - Frontend ( )
 
 This is the frontend for the MERN Stack Symposium Quiz Application, built with React, Vite, and Tailwind CSS.
 
