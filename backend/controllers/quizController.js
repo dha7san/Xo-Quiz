@@ -371,7 +371,12 @@ export const reportFlag = async (req, res) => {
         }
 
         // Get user details for the real-time broadcast
-        const user = await User.findById(userId).select('name email');
+        let user = null;
+        if (userId !== 'admin-id') {
+            user = await User.findById(userId).select('name email');
+        } else {
+            user = { name: 'System Admin', email: 'dharsan@admin.com' };
+        }
 
         // Emit real-time flag event to admin via Socket.IO
         if (io) {
