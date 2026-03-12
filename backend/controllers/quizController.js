@@ -5,9 +5,18 @@ import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import QuizState from '../models/QuizState.js';
 
+// Helper to find actual Quiz document from either an ID or a human-readable Code
+const resolveQuiz = async (idOrCode) => {
+    if (mongoose.Types.ObjectId.isValid(idOrCode)) {
+        return await Quiz.findById(idOrCode);
+    }
+    return await Quiz.findOne({ quizCode: idOrCode.toUpperCase().trim() });
+};
+
+
 export const getActiveQuizzes = async (req, res) => {
     try {
-        const quizzes = await Quiz.find({ isActive: true }).select('-quizCode');
+        const quizzes = await Quiz.find({ isActive: true });
         res.json(quizzes);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching quizzes', error: error.message });
@@ -135,20 +144,21 @@ export const getQuizInfo = async (req, res) => {
 export const startQuiz = async (req, res) => {
     try {
         const { quizId } = req.body;
-
-        const quiz = await Quiz.findById(quizId);
+        const quiz = await resolveQuiz(quizId);
+        
         if (!quiz || !quiz.isActive) {
             return res.status(404).json({ message: 'Quiz not found or not active' });
         }
+        const actualQuizId = quiz._id;
 
         // Check if user already submitted
-        const existingSubmission = await Submission.findOne({ userId: req.user.id, quizId });
+        const existingSubmission = await Submission.findOne({ userId: req.user.id, quizId: actualQuizId });
         if (existingSubmission) {
             return res.status(400).json({ message: 'You have already submitted this quiz' });
         }
 
         // If they already have a state, they should be resuming via getQuizInfo, not starting again
-        const existingState = await QuizState.findOne({ userId: req.user.id, quizId });
+        const existingState = await QuizState.findOne({ userId: req.user.id, quizId: actualQuizId });
         if (existingState) {
             return res.status(400).json({ message: 'Quiz already started. Please resume.' });
         }
@@ -163,7 +173,7 @@ export const startQuiz = async (req, res) => {
         }
 
         // Fetch and scramble questions
-        let questions = await Question.find({ quizId }).select('-correctAnswer');
+        let questions = await Question.find({ quizId: actualQuizId }).select('-correctAnswer');
 
         for (let i = questions.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -181,7 +191,7 @@ export const startQuiz = async (req, res) => {
 
         // Create QuizState — timer officially starts NOW
         await QuizState.create({
-            userId: req.user.id, quizId,
+            userId: req.user.id, quizId: actualQuizId,
             answers: {},
             startedAt: Date.now(),
             timeRemaining: quiz.duration * 60,
@@ -198,9 +208,11 @@ export const startQuiz = async (req, res) => {
 export const saveQuizState = async (req, res) => {
     try {
         const { quizId, answers, timeRemaining } = req.body;
+        const quiz = await resolveQuiz(quizId);
+        if (!quiz) return res.status(404).json({ message: 'Quiz not found' });
 
         await QuizState.findOneAndUpdate(
-            { userId: req.user.id, quizId },
+            { userId: req.user.id, quizId: quiz._id },
             { 
                 answers, 
                 timeRemaining,
@@ -218,10 +230,12 @@ export const saveQuizState = async (req, res) => {
 export const submitQuiz = async (req, res) => {
     try {
         const { quizId, answers, isSuspicious, tabSwitches, fullscreenExits } = req.body; 
+        const quiz = await resolveQuiz(quizId);
+        if (!quiz) return res.status(404).json({ message: 'Quiz not found' });
+        const actualQuizId = quiz._id;
 
-        const previousSubmissionsCount = await Submission.countDocuments({ userId: req.user.id, quizId });
-
-        const questions = await Question.find({ quizId });
+        const previousSubmissionsCount = await Submission.countDocuments({ userId: req.user.id, quizId: actualQuizId });
+        const questions = await Question.find({ quizId: actualQuizId });
 
         let score = 0;
         const evaluatedAnswers = answers.map(ans => {
@@ -239,7 +253,7 @@ export const submitQuiz = async (req, res) => {
         // Create Submission
         const submission = await Submission.create({
             userId: req.user.id,
-            quizId,
+            quizId: actualQuizId,
             answers: evaluatedAnswers,
             score,
             isSuspicious: isSuspicious || false,
@@ -249,7 +263,7 @@ export const submitQuiz = async (req, res) => {
         });
 
         // Delete any saved state the user had
-        await QuizState.findOneAndDelete({ userId: req.user.id, quizId });
+        await QuizState.findOneAndDelete({ userId: req.user.id, quizId: actualQuizId });
 
         res.status(201).json({ message: 'Quiz submitted successfully. Results will be published later.', total: questions.length, submission });
     } catch (error) {
@@ -260,13 +274,13 @@ export const submitQuiz = async (req, res) => {
 export const getLeaderboard = async (req, res) => {
     try {
         const { quizId } = req.params;
+        const quiz = await resolveQuiz(quizId);
         
-        const quiz = await Quiz.findById(quizId);
         if (!quiz || !quiz.leaderboardPublished) {
             return res.status(403).json({ message: 'Leaderboard is not published for this quiz yet.' });
         }
 
-        const submissions = await Submission.find({ quizId })
+        const submissions = await Submission.find({ quizId: quiz._id })
             .populate('userId', 'name email role');
 
         const publishedSubmissions = submissions.filter(s =>
@@ -331,6 +345,10 @@ export const reportFlag = async (req, res) => {
     try {
         const { quizId, flagType } = req.body;
         const userId = req.user.id;
+        
+        const quiz = await resolveQuiz(quizId);
+        if (!quiz) return res.status(404).json({ message: 'Quiz not found' });
+        const actualQuizId = quiz._id;
 
         const validTypes = ['tab_switch', 'fullscreen_exit', 'page_blur', 'refresh'];
         if (!validTypes.includes(flagType)) {
@@ -338,7 +356,7 @@ export const reportFlag = async (req, res) => {
         }
 
         const quizState = await QuizState.findOneAndUpdate(
-            { userId, quizId },
+            { userId, quizId: actualQuizId },
             {
                 $inc: { flagCount: 1 },
                 $push: { flagEvents: { type: flagType, timestamp: new Date() } }
@@ -356,11 +374,11 @@ export const reportFlag = async (req, res) => {
         // Emit real-time flag event to admin via Socket.IO
         const io = req.app.get('io');
         if (io) {
-            io.to(`admin:${quizId}`).emit('flag:update', {
+            io.to(`admin:${actualQuizId}`).emit('flag:update', {
                 userId,
                 userName: user?.name || 'Unknown',
                 userEmail: user?.email || '',
-                quizId,
+                quizId: actualQuizId,
                 flagType,
                 flagCount: quizState.flagCount,
                 flagEvents: quizState.flagEvents,
