@@ -4,10 +4,6 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
-export let io;
-import authRoutes from "./routes/authRoutes.js";
-import adminRoutes from "./routes/adminRoutes.js";
-import quizRoutes from "./routes/quizRoutes.js";
 
 dotenv.config();
 
@@ -15,12 +11,19 @@ const app = express();
 const httpServer = createServer(app);
 
 // Socket.IO setup
-io = new Server(httpServer, {
+const io = new Server(httpServer, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
     }
 });
+
+// IMPORTANT: Set io on app BEFORE routes are imported and used
+app.set("io", io);
+
+import authRoutes from "./routes/authRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import quizRoutes from "./routes/quizRoutes.js";
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -44,6 +47,9 @@ io.on("connection", (socket) => {
         const roomName = `admin:${quizId.toString()}`;
         socket.join(roomName);
         console.log(`👤 Admin joined room: ${roomName} (Socket: ${socket.id})`);
+        
+        // Immediate confirmation to admin
+        socket.emit('admin:confirmed', { room: roomName });
     });
 
     // Admin leaves room

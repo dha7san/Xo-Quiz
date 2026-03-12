@@ -142,6 +142,10 @@ const AdminDashboard = () => {
             socket.emit('admin:join', selectedQuizForAttendees);
             setSocketConnected(true);
         });
+
+        socket.on('admin:confirmed', (data) => {
+            console.log('🛰️ ROOM LINK VERIFIED:', data.room);
+        });
         
         socket.on('disconnect', (reason) => {
             console.warn('❌ MONITOR DISCONNECTED:', reason);
@@ -476,6 +480,16 @@ const AdminDashboard = () => {
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: 8 }}>
+                                        <NeuButton small onClick={async () => {
+                                            const testAlert = {
+                                                id: `test-${Date.now()}`,
+                                                userName: 'SYSTEM TEST',
+                                                flagType: 'fullscreen_exit',
+                                                flagCount: 1,
+                                                receivedAt: new Date()
+                                            };
+                                            setFlagAlerts(prev => [testAlert, ...prev].slice(0, 50));
+                                        }}>🧪 Test UI</NeuButton>
                                         <NeuButton small onClick={() => fetchLiveAttendees(selectedQuizForAttendees)}>🔄 Refresh</NeuButton>
                                         <NeuButton small onClick={() => { setAttendees(null); setSelectedQuizForAttendees(null); setFlagAlerts([]); if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; } }}>✕ Close</NeuButton>
                                     </div>
