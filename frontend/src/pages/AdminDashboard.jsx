@@ -5,7 +5,8 @@ import { io } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
     AlertCircle, User, Terminal, Bell, ShieldAlert, 
-    Video, Layout, RefreshCcw, ExternalLink, PlayCircle 
+    Video, Layout, RefreshCcw, ExternalLink, PlayCircle,
+    Users, CheckCircle2
 } from 'lucide-react';
 
 // ── Neumorphic styles ──
@@ -87,6 +88,7 @@ const AdminDashboard = () => {
     const [selectedQuizForAttendees, setSelectedQuizForAttendees] = useState(null);
     const [registrationOpen, setRegistrationOpen] = useState(true);
     const [flagAlerts, setFlagAlerts] = useState([]);
+    const [socketConnected, setSocketConnected] = useState(false);
     const socketRef = useRef(null);
 
     const [title, setTitle] = useState('');
@@ -114,6 +116,8 @@ const AdminDashboard = () => {
  
     useEffect(() => {
         if (!selectedQuizForAttendees) {
+            console.log('🔌 No quiz selected for monitoring. Socket idle.');
+            setSocketConnected(false);
             if (socketRef.current) {
                 socketRef.current.disconnect();
                 socketRef.current = null;
@@ -121,42 +125,79 @@ const AdminDashboard = () => {
             return;
         }
         
-        const socket = io(import.meta.env.VITE_API_URL, {
+        const apiUrl = import.meta.env.VITE_API_URL;
+        console.log('📡 Admin Monitoring Link: Initializing...', { quizId: selectedQuizForAttendees, url: apiUrl });
+        
+        const socket = io(apiUrl, {
             reconnection: true,
-            reconnectionAttempts: 5
+            reconnectionAttempts: 20,
+            reconnectionDelay: 1000,
+            transports: ['websocket', 'polling']
         });
         socketRef.current = socket;
         
         socket.on('connect', () => {
-            console.log('Admin Socket Connected. Joining room:', selectedQuizForAttendees);
-            socket.emit('admin:join', selectedQuizForAttendees);
+            const rid = selectedQuizForAttendees.toString();
+            console.log('✅ MONITOR CONNECTED:', socket.id);
+            console.log('📢 Joining Monitoring Room:', `admin:${rid}`);
+            socket.emit('admin:join', rid);
+            setSocketConnected(true);
+        });
+
+        socket.on('admin:confirmed', (data) => {
+            console.log('🛰️ ROOM LINK VERIFIED:', data.room);
+        });
+        
+        socket.on('disconnect', (reason) => {
+            console.warn('❌ MONITOR DISCONNECTED:', reason);
+            setSocketConnected(false);
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('⚠️ MONITOR LINK ERROR:', err.message);
+            setSocketConnected(false);
         });
         
         socket.on('flag:update', (data) => {
-            console.log('🚩 Received Flag Update:', data);
-            const alertData = { ...data, id: `${Date.now()}-${Math.random()}`, receivedAt: new Date() };
+            console.log('🚩 LIVE SECURITY ALERT RECEIVED:', data);
+            
             setFlagAlerts(prev => {
-                const updated = [alertData, ...prev].slice(0, 10);
-                console.log('Updated Flag Alerts State:', updated);
-                return updated;
+                const isDup = prev.some(a => a.id === data.id || (a.userName === data.userName && a.timestamp === data.timestamp));
+                if (isDup) return prev;
+                const alertData = { 
+                    ...data, 
+                    id: data.id || `alert-${Date.now()}`, 
+                    receivedAt: new Date() 
+                };
+                return [alertData, ...prev].slice(0, 50);
             });
             
             setAttendees(prev => {
                 if (!prev) return prev;
-                console.log('Updating Attendees List for User:', data.userId);
-                const upd = prev.attendees.map(a => 
-                    a._id?.toString() === data.userId 
-                        ? { ...a, flagCount: data.flagCount, isSuspicious: true, lastFlagType: data.flagType } 
-                        : a
-                );
-                return { ...prev, attendees: upd };
+                const uid = data.userId?.toString();
+                console.log('🔄 Table Update Sync for UserID:', uid);
+                
+                const updatedAttendees = prev.attendees.map(a => {
+                    const aid = a._id?.toString();
+                    if (aid === uid) {
+                        console.log(`✨ Matched attendee ${a.name}! Updating flags to ${data.flagCount}`);
+                        return { 
+                            ...a, 
+                            flagCount: data.flagCount, 
+                            isSuspicious: true, 
+                            lastFlagType: data.flagType,
+                            _lastUpdate: Date.now()
+                        };
+                    }
+                    return a;
+                });
+                return { ...prev, attendees: updatedAttendees };
             });
         });
 
-        socket.on('connect_error', (err) => console.error('Socket Connection Error:', err));
-
         return () => {
             if (socketRef.current) {
+                console.log('🧹 Cleaning up monitoring link...');
                 socketRef.current.disconnect();
                 socketRef.current = null;
             }
@@ -192,11 +233,18 @@ const AdminDashboard = () => {
 
     const fetchLiveAttendees = async (quizId) => {
         try {
+            console.log('🔄 Fetching attendee snapshot for:', quizId);
             const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/live-attendees/${quizId}`, { headers: { Authorization: `Bearer ${user.token}` } });
             setAttendees(res.data); 
-            setSelectedQuizForAttendees(quizId); 
-            setFlagAlerts([]); // Reset alerts for NEW selection
-        } catch (e) { console.error(e); }
+            
+            // Only reset alerts if we switch to a DIFFERENT quiz
+            if (selectedQuizForAttendees !== quizId) {
+                setFlagAlerts([]);
+                setSelectedQuizForAttendees(quizId);
+            }
+        } catch (e) { 
+            console.error('❌ Failed to fetch attendees:', e); 
+        }
     };
 
     const handleToggleResults = async (quizId) => {
@@ -332,268 +380,288 @@ const AdminDashboard = () => {
 
             {/* ── QUIZZES TAB ── */}
             {activeTab === 'quizzes' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px,380px) 1fr', gap: 24, alignItems: 'start' }}>
-                    {/* Create Quiz */}
-                    <div style={{ ...neu.card, padding: '28px 24px' }}>
-                        <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 20, color: 'var(--color-text-primary)' }}>
-                            ＋ Create New Quiz
-                        </h3>
-                        <form onSubmit={handleCreateQuiz} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                            <NeuInput label="Quiz Title" type="text" required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. ECE Fundamentals 2026" />
-                            <NeuInput label="Quiz Code" type="text" required value={quizCode} onChange={e => setQuizCode(e.target.value.toUpperCase())} placeholder="e.g. ECE2026" style={{ textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }} />
-                            <NeuInput label="Duration (minutes)" type="number" required value={duration} onChange={e => setDuration(Number(e.target.value))} min="1" />
-                            <NeuInput label="Start Time" type="datetime-local" required value={startTime} onChange={e => setStartTime(e.target.value)} />
-                            <NeuButton type="submit" variant="primary" style={{ marginTop: 4 }}>Create Quiz →</NeuButton>
-                        </form>
-                    </div>
-
-                    {/* Quiz List */}
-                    <div>
-                        <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: 'var(--color-text-primary)' }}>All Quizzes</h3>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {quizzes.length === 0 && (
-                                <div style={{ ...neu.card, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 14 }}>
-                                    No quizzes yet. Create your first quiz →
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: 24, alignItems: 'start' }} className="responsive-grid">
+                    {/* Left Column: Management & Monitor */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                        {/* Create Quiz */}
+                        <div style={{ ...neu.card, padding: '28px 24px' }}>
+                            <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 20, color: 'var(--color-text-primary)' }}>＋ Create New Quiz</h3>
+                            <form onSubmit={handleCreateQuiz} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                <div style={{ gridColumn: 'span 2' }}>
+                                    <NeuInput label="Quiz Title" type="text" required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. ECE Fundamentals 2026" />
                                 </div>
-                            )}
-                            {quizzes.map(quiz => (
-                                <div key={quiz._id} style={{ ...neu.card, padding: '18px 22px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
-                                                <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text-primary)' }}>{quiz.title}</span>
-                                                <span style={{
-                                                    fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 100,
-                                                    background: quiz.isActive ? 'rgba(48,209,88,0.12)' : 'rgba(0,0,0,0.06)',
-                                                    color: quiz.isActive ? '#1a7a3a' : '#888'
-                                                }}>
-                                                    {quiz.isActive ? '🟢 Active' : '⚫ Stopped'}
-                                                </span>
-                                                {quiz.resultsPublished && <span className="badge badge-info" style={{ fontSize: 11 }}>Results ✓</span>}
-                                                {quiz.leaderboardPublished && <span className="badge badge-success" style={{ fontSize: 11 }}>Board ✓</span>}
-                                            </div>
-                                            <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--color-text-secondary)', flexWrap: 'wrap' }}>
-                                                <span>🕐 {quiz.duration} min</span>
-                                                <span>🔑 {quiz.quizCode}</span>
-                                                {quiz.startTime && <span>📅 {new Date(quiz.startTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>}
-                                            </div>
-                                        </div>
+                                <NeuInput label="Quiz Code" type="text" required value={quizCode} onChange={e => setQuizCode(e.target.value.toUpperCase())} placeholder="e.g. ECE2026" style={{ textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }} />
+                                <NeuInput label="Duration (min)" type="number" required value={duration} onChange={e => setDuration(Number(e.target.value))} min="1" />
+                                <div style={{ gridColumn: 'span 2' }}>
+                                    <NeuInput label="Start Time" type="datetime-local" required value={startTime} onChange={e => setStartTime(e.target.value)} />
+                                </div>
+                                <div style={{ gridColumn: 'span 2', display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                                    <NeuButton type="submit" variant="primary">Create Quiz →</NeuButton>
+                                </div>
+                            </form>
+                        </div>
 
-                                        {/* Actions */}
-                                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                            <NeuButton small onClick={() => fetchLiveAttendees(quiz._id)}>👥 Attendees</NeuButton>
-                                            <div style={{ position: 'relative' }} ref={openDropdownId === quiz._id ? dropdownRef : null}>
-                                                <NeuButton small onClick={() => toggleDropdown(quiz._id)}>⋯ More</NeuButton>
-                                                {openDropdownId === quiz._id && (
-                                                    <div style={{
-                                                        position: 'absolute', right: 0, top: '100%', marginTop: 8, zIndex: 50,
-                                                        ...neu.card, padding: '8px', minWidth: 200,
-                                                        display: 'flex', flexDirection: 'column', gap: 4
+                        {/* Quiz List */}
+                        <div>
+                            <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 16, color: 'var(--color-text-primary)' }}>All Quizzes</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                {quizzes.length === 0 && (
+                                    <div style={{ ...neu.card, padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: 14 }}>
+                                        No quizzes yet. Create your first quiz above.
+                                    </div>
+                                )}
+                                {quizzes.map(quiz => (
+                                    <div key={quiz._id} style={{ ...neu.card, padding: '18px 22px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
+                                                    <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--color-text-primary)' }}>{quiz.title}</span>
+                                                    <span style={{
+                                                        fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 100,
+                                                        background: quiz.isActive ? 'rgba(48,209,88,0.12)' : 'rgba(0,0,0,0.06)',
+                                                        color: quiz.isActive ? '#1a7a3a' : '#888'
                                                     }}>
-                                                        {[
-                                                            { icon: quiz.resultsPublished ? '🙈' : '📤', label: quiz.resultsPublished ? 'Hide Results' : 'Publish Results', action: () => handleToggleResults(quiz._id) },
-                                                            { icon: quiz.leaderboardPublished ? '🙈' : '🏆', label: quiz.leaderboardPublished ? 'Hide Leaderboard' : 'Publish Leaderboard', action: () => handleToggleLeaderboard(quiz._id) },
-                                                            { icon: '⏹', label: 'Stop Quiz', action: () => handleStopQuiz(quiz._id), color: '#cc000a' },
-                                                            { icon: '🗑', label: 'Delete Quiz', action: () => handleDeleteQuiz(quiz._id), color: '#cc000a' },
-                                                        ].map(item => (
-                                                            <button key={item.label} onClick={item.action} style={{
-                                                                padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: 'none',
-                                                                background: 'transparent', cursor: 'pointer', textAlign: 'left',
-                                                                fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
-                                                                color: item.color || 'var(--color-text-primary)',
-                                                                transition: 'background var(--transition-fast)'
-                                                            }}
-                                                            onMouseEnter={e => e.target.style.background = 'rgba(0,0,0,0.04)'}
-                                                            onMouseLeave={e => e.target.style.background = 'transparent'}>
-                                                                {item.icon} {item.label}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
+                                                        {quiz.isActive ? '🟢 Active' : '⚫ Stopped'}
+                                                    </span>
+                                                    {quiz.resultsPublished && <span className="badge badge-info" style={{ fontSize: 11 }}>Results ✓</span>}
+                                                    {quiz.leaderboardPublished && <span className="badge badge-success" style={{ fontSize: 11 }}>Board ✓</span>}
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--color-text-secondary)', flexWrap: 'wrap' }}>
+                                                    <span>🕐 {quiz.duration} min</span>
+                                                    <span>🔑 {quiz.quizCode}</span>
+                                                    {quiz.startTime && <span>📅 {new Date(quiz.startTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+                                                </div>
+                                            </div>
+
+                                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                                <NeuButton small onClick={() => fetchLiveAttendees(quiz._id)}>👥 Attendees</NeuButton>
+                                                <div style={{ position: 'relative' }} ref={openDropdownId === quiz._id ? dropdownRef : null}>
+                                                    <NeuButton small onClick={() => toggleDropdown(quiz._id)}>⋯ More</NeuButton>
+                                                    {openDropdownId === quiz._id && (
+                                                        <div style={{
+                                                            position: 'absolute', right: 0, top: '100%', marginTop: 8, zIndex: 50,
+                                                            ...neu.card, padding: '8px', minWidth: 200,
+                                                            display: 'flex', flexDirection: 'column', gap: 4
+                                                        }}>
+                                                            {[
+                                                                { icon: quiz.resultsPublished ? '🙈' : '📤', label: quiz.resultsPublished ? 'Hide Results' : 'Publish Results', action: () => handleToggleResults(quiz._id) },
+                                                                { icon: quiz.leaderboardPublished ? '🙈' : '🏆', label: quiz.leaderboardPublished ? 'Hide Leaderboard' : 'Publish Leaderboard', action: () => handleToggleLeaderboard(quiz._id) },
+                                                                { icon: '⏹', label: 'Stop Quiz', action: () => handleStopQuiz(quiz._id), color: '#cc000a' },
+                                                                { icon: '🗑', label: 'Delete Quiz', action: () => handleDeleteQuiz(quiz._id), color: '#cc000a' },
+                                                            ].map(item => (
+                                                                <button key={item.label} onClick={item.action} style={{
+                                                                    padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: 'none',
+                                                                    background: 'transparent', cursor: 'pointer', textAlign: 'left',
+                                                                    fontSize: 13, fontWeight: 500, fontFamily: 'inherit',
+                                                                    color: item.color || 'var(--color-text-primary)',
+                                                                    transition: 'background var(--transition-fast)'
+                                                                }}
+                                                                onMouseEnter={e => e.target.style.background = 'rgba(0,0,0,0.04)'}
+                                                                onMouseLeave={e => e.target.style.background = 'transparent'}>
+                                                                    {item.icon} {item.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
 
-                        {/* Live Attendees Panel */}
+                        {/* Live Monitoring Dashboard */}
                         {attendees && selectedQuizForAttendees && (
-                            <div style={{ ...neu.card, padding: '24px', marginTop: 24 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+                            <div style={{ ...neu.card, padding: '24px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
                                     <div>
-                                        <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
-                                            👥 Live Attendees — {quizzes.find(q => q._id === selectedQuizForAttendees)?.title || ''}
+                                        <h3 style={{ fontWeight: 800, fontSize: 16, marginBottom: 4 }}>
+                                            👥 Monitoring: {quizzes.find(q => q._id === selectedQuizForAttendees)?.title || 'Live Session'}
                                         </h3>
-                                        <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
-                                            {attendees.activeCount > 0 && <span style={{ color: '#1a7a3a', fontWeight: 600 }}>🟢 {attendees.activeCount} active</span>}
-                                            <span style={{ color: 'var(--color-text-secondary)' }}>Total: {attendees.attendeeCount} / {attendees.totalUsers}</span>
+                                        <div style={{ display: 'flex', gap: 12, fontSize: 12, fontWeight: 600 }}>
+                                            {attendees.activeCount > 0 && <span style={{ color: '#1a7a3a' }}>🟢 {attendees.activeCount} active</span>}
+                                            <span style={{ color: '#8090a0' }}>Status: {attendees.attendeeCount} Joined / {attendees.totalUsers} Total</span>
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: 8 }}>
-                                        <NeuButton small onClick={() => fetchLiveAttendees(selectedQuizForAttendees)}>🔄</NeuButton>
-                                        <NeuButton small onClick={() => { setAttendees(null); setSelectedQuizForAttendees(null); setFlagAlerts([]); if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; } }}>✕</NeuButton>
+                                        <NeuButton small onClick={async () => {
+                                            const testAlert = {
+                                                id: `test-${Date.now()}`,
+                                                userName: 'SYSTEM TEST',
+                                                flagType: 'fullscreen_exit',
+                                                flagCount: 1,
+                                                receivedAt: new Date()
+                                            };
+                                            setFlagAlerts(prev => [testAlert, ...prev].slice(0, 50));
+                                        }}>🧪 Test UI</NeuButton>
+                                        <NeuButton small onClick={() => fetchLiveAttendees(selectedQuizForAttendees)}>🔄 Refresh</NeuButton>
+                                        <NeuButton small onClick={() => { setAttendees(null); setSelectedQuizForAttendees(null); setFlagAlerts([]); if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; } }}>✕ Close</NeuButton>
                                     </div>
                                 </div>
 
-                                {/* Live Monitor Section */}
-                                <div style={{ marginBottom: 24 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff3b30', boxShadow: '0 0 10px #ff3b30', animation: 'pulse 1.5s infinite' }} />
-                                        <h4 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#111' }}>
-                                            Live Activity Feed
-                                        </h4>
+                                {/* Security Feed Sub-Panel */}
+                                <div style={{ ...neu.inset, padding: '20px', marginBottom: 24, background: 'rgba(255,255,255,0.4)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <div style={{ 
+                                                width: 10, height: 10, borderRadius: '50%', 
+                                                background: socketConnected ? '#30d158' : '#ff3b30', 
+                                                boxShadow: socketConnected ? '0 0 10px #30d158' : '0 0 10px #ff3b30',
+                                                animation: socketConnected ? 'pulse 1.5s infinite' : 'none' 
+                                            }} />
+                                            <h4 style={{ fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#111' }}>
+                                                Security Monitoring
+                                            </h4>
+                                        </div>
+                                        <div style={{ 
+                                            fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 8,
+                                            background: socketConnected ? 'rgba(48,209,88,0.1)' : 'rgba(255,59,48,0.1)',
+                                            color: socketConnected ? '#1a7a3a' : '#cc000a'
+                                        }}>
+                                            {socketConnected ? '🟢 SYSTEM CONNECTED' : '🔴 LINK INTERRUPTED'}
+                                        </div>
                                     </div>
-                                    
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 120 }}>
-                                        {flagAlerts.length === 0 ? (
-                                            <div 
-                                                style={{ 
-                                                    padding: '40px 24px', textAlign: 'center', 
-                                                    background: 'rgba(255,255,255,0.4)', borderRadius: 24, 
-                                                    border: '2px dashed rgba(108, 99, 255, 0.15)', 
-                                                    color: '#6c63ff', 
-                                                    display: 'flex', flexDirection: 'column', alignItems: 'center'
-                                                }}
-                                            >
-                                                <div style={{ 
-                                                    width: 48, height: 48, borderRadius: 16, 
-                                                    background: 'rgba(108,99,255,0.1)', 
-                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    marginBottom: 16, color: 'var(--brand-accent)'
-                                                }}>
-                                                    <Terminal size={24} />
-                                                </div>
-                                                <p style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.01em', marginBottom: 4 }}>System Active & Listening</p>
-                                                <p style={{ fontSize: 12, color: '#7a8090', maxWidth: 220, lineHeight: 1.5 }}>Real-time security events for students will appear here instantly.</p>
-                                            </div>
-                                        ) : (
-                                            flagAlerts.map((alert, idx) => {
-                                                const isLatest = idx === 0;
-                                                const isCritical = alert.flagCount >= 3;
-                                                
-                                                return (
-                                                    <div
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 300, overflowY: 'auto', paddingRight: 4 }} className="custom-scrollbar">
+                                        <AnimatePresence mode="popLayout" initial={false}>
+                                            {flagAlerts.length === 0 ? (
+                                                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ padding: '40px 20px', textAlign: 'center' }}>
+                                                    <div style={{ color: '#cbd5e0', marginBottom: 12 }}><ShieldAlert size={36} strokeWidth={1.5} /></div>
+                                                    <p style={{ fontSize: 13, color: '#8090a0', fontWeight: 600 }}>Waiting for real-time security events...</p>
+                                                </motion.div>
+                                            ) : (
+                                                flagAlerts.map((alert) => (
+                                                    <motion.div
                                                         key={alert.id}
+                                                        initial={{ x: -20, opacity: 0 }}
+                                                        animate={{ x: 0, opacity: 1 }}
+                                                        exit={{ x: 20, opacity: 0 }}
+                                                        layout
                                                         style={{
-                                                            padding: isLatest ? '18px 20px' : '14px 18px', 
-                                                            borderRadius: 20,
-                                                            background: isCritical ? 'rgba(255, 59, 48, 0.05)' : isLatest ? 'white' : 'rgba(255,255,255,0.6)',
-                                                            border: `1px solid ${isCritical ? 'rgba(255, 59, 48, 0.3)' : isLatest ? 'rgba(108, 99, 255, 0.2)' : 'rgba(0, 0, 0, 0.04)'}`,
-                                                            display: 'flex', alignItems: 'center', gap: 16,
-                                                            position: 'relative', overflow: 'hidden',
-                                                            animation: isLatest ? 'pageIn 0.3s ease-out' : 'none'
+                                                            padding: '14px 16px', borderRadius: 16, background: 'white',
+                                                            border: `1px solid ${alert.flagCount >= 3 ? 'rgba(255,59,48,0.15)' : 'rgba(0,0,0,0.03)'}`,
+                                                            display: 'flex', alignItems: 'center', gap: 14,
+                                                            boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
                                                         }}
                                                     >
-                                                        {/* Brand indicator for latest */}
-                                                        {isLatest && (
-                                                            <div style={{ 
-                                                                position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, 
-                                                                background: isCritical ? '#ff3b30' : 'var(--brand-accent)' 
-                                                            }} />
-                                                        )}
-                                                        
                                                         <div style={{ 
-                                                            width: isLatest ? 48 : 40, height: isLatest ? 48 : 40, borderRadius: '50%', 
-                                                            background: isCritical ? '#ff3b30' : isLatest ? 'var(--brand-accent)' : '#ff9f0a',
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                                                            boxShadow: isLatest ? '0 4px 12px rgba(0,0,0,0.1)' : 'none'
+                                                            width: 40, height: 40, borderRadius: '50%', 
+                                                            background: alert.flagCount >= 3 ? '#ff3b30' : 'var(--brand-accent)',
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white'
                                                         }}>
-                                                            <ShieldAlert size={isLatest ? 24 : 20} strokeWidth={2.5} />
+                                                            <ShieldAlert size={20} strokeWidth={2.5} />
                                                         </div>
-                                                        
                                                         <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                                                                <span style={{ fontWeight: 800, fontSize: isLatest ? 15 : 14, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                    {alert.userName}
-                                                                </span>
-                                                                <span style={{ fontSize: 10, fontWeight: 700, color: '#999', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: isLatest ? '#30d158' : '#ccc' }} />
-                                                                    {new Date(alert.timestamp || alert.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                                </span>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                <span style={{ fontWeight: 800, fontSize: 14, color: '#111' }}>{alert.userName}</span>
+                                                                <span style={{ fontSize: 10, fontWeight: 700, color: '#8090a0' }}>{new Date(alert.timestamp || alert.receivedAt).toLocaleTimeString()}</span>
                                                             </div>
-                                                            
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: isCritical ? '#ff3b30' : '#444' }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', fontSize: 11 }}>
-                                                                    {alert.flagType === 'tab_switch' ? <><Layout size={13} /> TAB BREACH</> :
-                                                                     alert.flagType === 'fullscreen_exit' ? <><ExternalLink size={13} /> FULLSCREEN EXIT</> :
-                                                                     alert.flagType === 'page_blur' ? <><AlertCircle size={13} /> FOCUS LOST</> :
-                                                                     alert.flagType === 'refresh' ? <><RefreshCcw size={13} /> RELOAD ATTEMPT</> :
-                                                                     <><ShieldAlert size={13} /> SECURITY ALERT</>}
-                                                                </div>
-                                                                <span style={{ opacity: 0.3 }}>|</span>
-                                                                <span style={{ fontWeight: 900, background: isCritical ? '#ff3b30' : 'rgba(0,0,0,0.06)', color: isCritical ? 'white' : '#555', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                                                                <span style={{ 
+                                                                    fontSize: 10, fontWeight: 900, textTransform: 'uppercase', 
+                                                                    color: alert.flagCount >= 3 ? '#ff3b30' : '#444'
+                                                                }}>
+                                                                    {alert.flagType?.replace('_',' ').toUpperCase() || 'SECURITY ALERT'}
+                                                                </span>
+                                                                <span style={{ opacity: 0.2 }}>|</span>
+                                                                <span style={{ fontSize: 10, fontWeight: 800, background: alert.flagCount >= 3 ? '#ff3b30' : 'rgba(0,0,0,0.05)', color: alert.flagCount >= 3 ? 'white' : '#718096', padding: '1px 6px', borderRadius: 4 }}>
                                                                     FLAG #{alert.flagCount}
                                                                 </span>
                                                             </div>
                                                         </div>
-                                                        
-                                                        {isCritical && (
-                                                            <div style={{ 
-                                                                fontSize: 10, fontWeight: 900, color: 'white', background: '#ff3b30', 
-                                                                padding: '4px 10px', borderRadius: 10, textTransform: 'uppercase', 
-                                                                letterSpacing: '0.05em', boxShadow: '0 4px 10px rgba(255,59,48,0.3)'
-                                                            }}>
-                                                                TERMINATED
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })
-                                        )}
+                                                    </motion.div>
+                                                ))
+                                            )}
+                                        </AnimatePresence>
                                     </div>
                                 </div>
 
-                                {/* Attendees Table */}
+                                {/* Attendee List Table */}
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                         <thead>
                                             <tr style={{ borderBottom: '2px solid rgba(0,0,0,0.06)' }}>
-                                                {['#', 'Name', 'Email', 'Status', 'Flags', 'Score', 'Time'].map(h => (
-                                                    <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#8090a0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                                                {['Name', 'Status', 'Flags', 'Score', 'Time'].map(h => (
+                                                    <th key={h} style={{ padding: '12px 10px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: '#8090a0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
                                                 ))}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {attendees.attendees.map((a, i) => (
-                                                <tr key={a._id || i} style={{
+                                                <tr key={a._id || i} style={{ 
                                                     borderBottom: '1px solid rgba(0,0,0,0.04)',
-                                                    background: a.flagCount >= 3 ? 'rgba(255,59,48,0.04)' : a.flagCount > 0 ? 'rgba(255,159,10,0.03)' : 'transparent',
-                                                    animation: a.isSuspicious ? 'shake 0.5s ease-in-out' : 'none',
-                                                    transition: 'all 0.3s ease'
+                                                    background: a.flagCount >= 3 ? 'rgba(255,59,48,0.03)' : 'transparent',
+                                                    transition: 'background 0.3s ease'
                                                 }}>
-                                                    <td style={{ padding: '12px 12px', color: '#aaa', fontWeight: 600 }}>{i + 1}</td>
-                                                    <td style={{ padding: '12px 12px', fontWeight: 600, color: 'var(--color-text-primary)' }}>{a.name || '—'}</td>
-                                                    <td style={{ padding: '12px 12px', color: 'var(--color-text-secondary)', fontSize: 12 }}>{a.email || '—'}</td>
-                                                    <td style={{ padding: '12px 12px' }}>
-                                                        {a.status === 'in_progress'
-                                                            ? <span style={{ background: 'rgba(48,209,88,0.12)', color: '#1a7a3a', padding: '2px 9px', borderRadius: 100, fontSize: 11, fontWeight: 700 }}>🟢 Active</span>
-                                                            : a.isBlocked
-                                                            ? <span style={{ background: 'rgba(255,69,58,0.1)', color: '#cc000a', padding: '2px 9px', borderRadius: 100, fontSize: 11, fontWeight: 700 }}>Blocked</span>
-                                                            : <span style={{ background: 'rgba(108,99,255,0.1)', color: '#6c63ff', padding: '2px 9px', borderRadius: 100, fontSize: 11, fontWeight: 700 }}>✅ Done</span>
+                                                    <td style={{ padding: '14px 10px', fontWeight: 700, color: '#111' }}>{a.name || 'Anonymous'}</td>
+                                                    <td style={{ padding: '14px 10px' }}>
+                                                        {a.status === 'in_progress' ? 
+                                                            <span style={{ color: '#1a7a3a', fontWeight: 800, fontSize: 12 }}>🟢 ACTIVE</span> : 
+                                                            a.isBlocked ? 
+                                                            <span style={{ color: '#cc000a', fontWeight: 800, fontSize: 12 }}>🚫 BLOCKED</span> : 
+                                                            <span style={{ color: '#6c63ff', fontWeight: 800, fontSize: 12 }}>✅ DONE</span>
                                                         }
                                                     </td>
-                                                    <td style={{ padding: '12px 12px' }}>
-                                                        {a.flagCount > 0
-                                                            ? <span style={{ fontWeight: 800, fontSize: 13, color: a.flagCount >= 3 ? '#cc000a' : a.flagCount >= 2 ? '#9e5700' : '#8a7000' }}>
-                                                                🚩 {a.flagCount}
-                                                              </span>
-                                                            : <span style={{ color: '#ccc' }}>0</span>}
+                                                    <td style={{ padding: '14px 10px' }}>
+                                                        {a.flagCount > 0 ? 
+                                                            <span style={{ fontWeight: 900, color: a.flagCount >= 3 ? '#cc000a' : '#ff9f0a', fontSize: 14 }}>🚩 {a.flagCount}</span> : 
+                                                            <span style={{ color: '#cbd5e0' }}>0</span>
+                                                        }
                                                     </td>
-                                                    <td style={{ padding: '12px 12px', fontWeight: 700, color: 'var(--brand-accent)' }}>{a.score !== null ? a.score : '—'}</td>
-                                                    <td style={{ padding: '12px 12px', color: 'var(--color-text-secondary)', fontSize: 11 }}>
-                                                        {a.submittedAt ? new Date(a.submittedAt).toLocaleTimeString() : a.startedAt ? new Date(a.startedAt).toLocaleTimeString() : '—'}
+                                                    <td style={{ padding: '14px 10px', fontWeight: 900, color: 'var(--brand-accent)', fontSize: 15 }}>{a.score !== null ? a.score : '—'}</td>
+                                                    <td style={{ padding: '14px 10px', color: '#8090a0', fontSize: 11, fontWeight: 600 }}>
+                                                        {a.submittedAt ? new Date(a.submittedAt).toLocaleTimeString() : (a.startedAt ? 'Online' : '—')}
                                                     </td>
                                                 </tr>
                                             ))}
                                             {attendees.attendees.length === 0 && (
-                                                <tr><td colSpan="7" style={{ padding: 24, textAlign: 'center', color: 'var(--color-text-secondary)' }}>No attendees yet.</td></tr>
+                                                <tr><td colSpan="5" style={{ padding: 40, textAlign: 'center', color: '#a0aec0', fontWeight: 600 }}>No students have joined yet.</td></tr>
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
                         )}
+                    </div>
+
+                    {/* Right Column: Quick Stats Sidebar */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, position: 'sticky', top: 24 }}>
+                        <div style={{ ...neu.card, padding: '24px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--brand-accent)' }} />
+                                <h3 style={{ fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#111' }}>Dashboard Stats</h3>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                {[
+                                    { icon: <PlayCircle size={18} />, label: 'Total Quizzes', count: quizzes.length, color: '#6c63ff', bg: 'rgba(108,99,255,0.08)' },
+                                    { icon: <ShieldAlert size={18} />, label: 'Active Sessions', count: quizzes.filter(q => q.isActive).length, color: '#30d158', bg: 'rgba(48,209,88,0.08)' },
+                                    { icon: <Users size={18} />, label: 'Users Online', count: attendees?.activeCount || 0, color: '#ff9f0a', bg: 'rgba(255,159,10,0.08)' },
+                                    { icon: <CheckCircle2 size={18} />, label: 'Submissions', count: results.length, color: '#007aff', bg: 'rgba(0,122,255,0.08)' },
+                                ].map((stat, i) => (
+                                    <div key={i} style={{ 
+                                        padding: '16px', borderRadius: 20, background: 'white', border: '1px solid rgba(0,0,0,0.03)',
+                                        display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+                                    }}>
+                                        <div style={{ 
+                                            width: 40, height: 40, borderRadius: 12, background: stat.bg, 
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: stat.color 
+                                        }}>
+                                            {stat.icon}
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 18, fontWeight: 900, color: '#111', lineHeight: 1 }}>{stat.count}</div>
+                                            <div style={{ fontSize: 10, color: '#8090a0', fontWeight: 700, marginTop: 4, textTransform: 'uppercase' }}>{stat.label}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Recent Alerts Quick Preview (Optional future feature) */}
+                        <div style={{ ...neu.inset, padding: '16px', borderRadius: 20, textAlign: 'center' }}>
+                            <p style={{ fontSize: 11, color: '#8090a0', fontWeight: 600 }}>System Status: <span style={{ color: '#30d158' }}>Nominal</span></p>
+                        </div>
                     </div>
                 </div>
             )}

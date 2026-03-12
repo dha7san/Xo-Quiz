@@ -71,17 +71,19 @@ const QuizPage = () => {
 
     const reportFlag = useCallback(async (flagType) => {
         try {
-            console.log(`🛡 Reporting Security Violation: ${flagType}`);
+            const targetQuizId = quiz?._id || quizCode;
+            console.log(`🛡 [Security] Reporting violation: ${flagType} for QuizID: ${targetQuizId}`);
+            
             const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/flag`,
-                { quizId: quiz?._id || quizCode, flagType },
+                { quizId: targetQuizId, flagType },
                 { headers: { Authorization: `Bearer ${user.token}` } }
             );
-            console.log(`✅ Flag Reported. New count: ${res.data.flagCount}`);
+            console.log(`✅ [Security] Flag Recorded. Type: ${flagType}, Total Flags: ${res.data.flagCount}`);
             flagCountRef.current = res.data.flagCount;
             setFlagCount(res.data.flagCount);
             return res.data.flagCount;
         } catch (err) { 
-            console.error('❌ Failed to report flag:', err);
+            console.error('❌ [Security] Reporting failed:', err.response?.data?.message || err.message);
             return flagCountRef.current; 
         }
     }, [quizCode, user.token, quiz?._id]);
@@ -96,6 +98,7 @@ const QuizPage = () => {
                     setAnswers(res.data.savedState.answers || {});
                     setTimeLeft(res.data.savedState.timeRemaining);
                     setIsResuming(true);
+                    setQuizStarted(true); // ✅ Activate flag listeners on resume
                 } else {
                     setTimeLeft(res.data.quiz.duration * 60);
                 }
