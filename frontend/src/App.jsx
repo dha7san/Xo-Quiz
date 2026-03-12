@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -224,7 +224,7 @@ const AppRoutes = () => {
           {user?.role === 'admin' ? <Navigate to="/admin" replace /> : <UserDashboard />}
         </PrivateRoute>
       } />
-      <Route path="/quiz/:id" element={<PrivateRoute roles={['user']}><QuizPage /></PrivateRoute>} />
+      <Route path="/quiz/:quizCode" element={<PrivateRoute roles={['user']}><QuizPage /></PrivateRoute>} />
       <Route path="/leaderboard" element={<PrivateRoute roles={['user','admin']}><Leaderboard /></PrivateRoute>} />
       <Route path="/my-results"  element={<PrivateRoute roles={['user']}><MyResults /></PrivateRoute>} />
       <Route path="/admin" element={<PrivateRoute roles={['admin']}><AdminDashboard /></PrivateRoute>} />

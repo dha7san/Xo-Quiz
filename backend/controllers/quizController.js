@@ -303,7 +303,24 @@ export const getMyResults = async (req, res) => {
 
         const publishedSubmissions = submissions.filter(s => s.quizId && s.quizId.resultsPublished);
 
-        res.json(publishedSubmissions);
+        // Fetch question counts for each unique quizId in published submissions
+        const quizIds = [...new Set(publishedSubmissions.map(s => s.quizId._id))];
+        const questionCounts = await Promise.all(quizIds.map(async (qId) => {
+            const count = await Question.countDocuments({ quizId: qId });
+            return { [qId]: count };
+        }));
+
+        const countsMap = Object.assign({}, ...questionCounts);
+
+        const resultsWithCounts = publishedSubmissions.map(sub => {
+            const subObj = sub.toObject();
+            return {
+                ...subObj,
+                totalQuestions: countsMap[sub.quizId._id] || 0
+            };
+        });
+
+        res.json(resultsWithCounts);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching your results', error: error.message });
     }
