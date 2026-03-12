@@ -111,14 +111,63 @@ const AdminDashboard = () => {
         if (activeTab === 'results') fetchResults();
         if (activeTab === 'users') fetchUsers();
     }, [activeTab]);
+ 
+    useEffect(() => {
+        if (!selectedQuizForAttendees) {
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
+            return;
+        }
+        
+        const socket = io(import.meta.env.VITE_API_URL, {
+            reconnection: true,
+            reconnectionAttempts: 5
+        });
+        socketRef.current = socket;
+        
+        socket.on('connect', () => {
+            console.log('Admin Socket Connected. Joining room:', selectedQuizForAttendees);
+            socket.emit('admin:join', selectedQuizForAttendees);
+        });
+        
+        socket.on('flag:update', (data) => {
+            console.log('🚩 Received Flag Update:', data);
+            const alertData = { ...data, id: `${Date.now()}-${Math.random()}`, receivedAt: new Date() };
+            setFlagAlerts(prev => {
+                const updated = [alertData, ...prev].slice(0, 10);
+                console.log('Updated Flag Alerts State:', updated);
+                return updated;
+            });
+            
+            setAttendees(prev => {
+                if (!prev) return prev;
+                console.log('Updating Attendees List for User:', data.userId);
+                const upd = prev.attendees.map(a => 
+                    a._id?.toString() === data.userId 
+                        ? { ...a, flagCount: data.flagCount, isSuspicious: true, lastFlagType: data.flagType } 
+                        : a
+                );
+                return { ...prev, attendees: upd };
+            });
+        });
+
+        socket.on('connect_error', (err) => console.error('Socket Connection Error:', err));
+
+        return () => {
+            if (socketRef.current) {
+                socketRef.current.disconnect();
+                socketRef.current = null;
+            }
+        };
+    }, [selectedQuizForAttendees]);
 
     useEffect(() => {
-        const handleClick = (e) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setOpenDropdownId(null); };
-        document.addEventListener('mousedown', handleClick);
-        return () => document.removeEventListener('mousedown', handleClick);
+        const h = (e) => { if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setOpenDropdownId(null); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
     }, []);
-
-    useEffect(() => () => { if (socketRef.current) { socketRef.current.disconnect(); socketRef.current = null; } }, []);
 
     const fetchQuizzes = async () => {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/all-quizzes`, { headers: { Authorization: `Bearer ${user.token}` } }).catch(console.error);
@@ -136,7 +185,6 @@ const AdminDashboard = () => {
         const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/settings`).catch(console.error);
         if (res) setRegistrationOpen(res.data.registrationOpen);
     };
-
     const handleToggleRegistration = async () => {
         const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/toggle-registration`, {}, { headers: { Authorization: `Bearer ${user.token}` } }).catch(e => alert(e.response?.data?.message || 'Error'));
         if (res) setRegistrationOpen(res.data.registrationOpen);
@@ -145,35 +193,9 @@ const AdminDashboard = () => {
     const fetchLiveAttendees = async (quizId) => {
         try {
             const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/live-attendees/${quizId}`, { headers: { Authorization: `Bearer ${user.token}` } });
-            setAttendees(res.data); setSelectedQuizForAttendees(quizId); setFlagAlerts([]);
-            if (socketRef.current) socketRef.current.disconnect();
-            const socket = io(import.meta.env.VITE_API_URL, {
-                reconnection: true,
-                reconnectionAttempts: 5
-            });
-            socketRef.current = socket;
-            
-            socket.on('connect', () => {
-                console.log('Admin Socket Connected. Joining room:', quizId);
-                socket.emit('admin:join', quizId);
-            });
-            
-            socket.on('connect_error', (err) => console.error('Socket Connection Error:', err));
-            socket.on('flag:update', (data) => {
-                const alertData = { ...data, id: Date.now() };
-                setFlagAlerts(prev => [alertData, ...prev].slice(0, 10)); // Keep last 10
-                
-                // Visual feedback in attendees list
-                setAttendees(prev => {
-                    if (!prev) return prev;
-                    const upd = prev.attendees.map(a => 
-                        a._id?.toString() === data.userId 
-                            ? { ...a, flagCount: data.flagCount, isSuspicious: true, lastFlagType: data.flagType } 
-                            : a
-                    );
-                    return { ...prev, attendees: upd };
-                });
-            });
+            setAttendees(res.data); 
+            setSelectedQuizForAttendees(quizId); 
+            setFlagAlerts([]); // Reset alerts for NEW selection
         } catch (e) { console.error(e); }
     };
 
@@ -423,100 +445,102 @@ const AdminDashboard = () => {
                                         </h4>
                                     </div>
                                     
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: flagAlerts.length > 0 ? 'auto' : 80 }}>
-                                        <AnimatePresence mode="popLayout">
-                                            {flagAlerts.length === 0 ? (
-                                                <motion.div 
-                                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                                                    style={{ padding: '32px 24px', textAlign: 'center', background: 'rgba(0,0,0,0.02)', borderRadius: 20, border: '2px dashed rgba(0,0,0,0.08)', color: '#999', fontSize: 13 }}
-                                                >
-                                                    <div style={{ display: 'inline-flex', padding: 12, borderRadius: 12, background: 'rgba(0,0,0,0.03)', marginBottom: 12 }}>
-                                                        <Terminal size={24} style={{ opacity: 0.4 }} />
-                                                    </div>
-                                                    <p style={{ fontWeight: 600, letterSpacing: '0.01em' }}>System Active. Listening for real-time events...</p>
-                                                    <p style={{ fontSize: 11, marginTop: 4 }}>Updates will appear here as soon as they are detected.</p>
-                                                </motion.div>
-                                            ) : (
-                                                flagAlerts.map((alert, idx) => {
-                                                    const isLatest = idx === 0;
-                                                    const isCritical = alert.flagCount >= 3;
-                                                    
-                                                    return (
-                                                        <motion.div
-                                                            key={alert.id}
-                                                            initial={{ x: -30, opacity: 0, scale: 0.9 }}
-                                                            animate={{ 
-                                                                x: 0, opacity: 1, scale: isLatest ? 1.02 : 1,
-                                                                boxShadow: isLatest ? `0 0 20px ${isCritical ? 'rgba(255, 59, 48, 0.15)' : 'rgba(108, 99, 255, 0.1)'}` : '0 4px 12px rgba(0,0,0,0.03)'
-                                                            }}
-                                                            exit={{ x: 30, opacity: 0 }}
-                                                            layout
-                                                            style={{
-                                                                padding: isLatest ? '18px 20px' : '14px 18px', 
-                                                                borderRadius: 20,
-                                                                background: isCritical ? 'rgba(255, 59, 48, 0.05)' : isLatest ? 'white' : 'rgba(255,255,255,0.6)',
-                                                                border: `1px solid ${isCritical ? 'rgba(255, 59, 48, 0.3)' : isLatest ? 'rgba(108, 99, 255, 0.2)' : 'rgba(0, 0, 0, 0.04)'}`,
-                                                                display: 'flex', alignItems: 'center', gap: 16,
-                                                                position: 'relative', overflow: 'hidden'
-                                                            }}
-                                                        >
-                                                            {/* Brand indicator for latest */}
-                                                            {isLatest && (
-                                                                <div style={{ 
-                                                                    position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, 
-                                                                    background: isCritical ? '#ff3b30' : 'var(--brand-accent)' 
-                                                                }} />
-                                                            )}
-                                                            
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 120 }}>
+                                        {flagAlerts.length === 0 ? (
+                                            <div 
+                                                style={{ 
+                                                    padding: '40px 24px', textAlign: 'center', 
+                                                    background: 'rgba(255,255,255,0.4)', borderRadius: 24, 
+                                                    border: '2px dashed rgba(108, 99, 255, 0.15)', 
+                                                    color: '#6c63ff', 
+                                                    display: 'flex', flexDirection: 'column', alignItems: 'center'
+                                                }}
+                                            >
+                                                <div style={{ 
+                                                    width: 48, height: 48, borderRadius: 16, 
+                                                    background: 'rgba(108,99,255,0.1)', 
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    marginBottom: 16, color: 'var(--brand-accent)'
+                                                }}>
+                                                    <Terminal size={24} />
+                                                </div>
+                                                <p style={{ fontWeight: 700, fontSize: 14, letterSpacing: '-0.01em', marginBottom: 4 }}>System Active & Listening</p>
+                                                <p style={{ fontSize: 12, color: '#7a8090', maxWidth: 220, lineHeight: 1.5 }}>Real-time security events for students will appear here instantly.</p>
+                                            </div>
+                                        ) : (
+                                            flagAlerts.map((alert, idx) => {
+                                                const isLatest = idx === 0;
+                                                const isCritical = alert.flagCount >= 3;
+                                                
+                                                return (
+                                                    <div
+                                                        key={alert.id}
+                                                        style={{
+                                                            padding: isLatest ? '18px 20px' : '14px 18px', 
+                                                            borderRadius: 20,
+                                                            background: isCritical ? 'rgba(255, 59, 48, 0.05)' : isLatest ? 'white' : 'rgba(255,255,255,0.6)',
+                                                            border: `1px solid ${isCritical ? 'rgba(255, 59, 48, 0.3)' : isLatest ? 'rgba(108, 99, 255, 0.2)' : 'rgba(0, 0, 0, 0.04)'}`,
+                                                            display: 'flex', alignItems: 'center', gap: 16,
+                                                            position: 'relative', overflow: 'hidden',
+                                                            animation: isLatest ? 'pageIn 0.3s ease-out' : 'none'
+                                                        }}
+                                                    >
+                                                        {/* Brand indicator for latest */}
+                                                        {isLatest && (
                                                             <div style={{ 
-                                                                width: isLatest ? 48 : 40, height: isLatest ? 48 : 40, borderRadius: '50%', 
-                                                                background: isCritical ? '#ff3b30' : isLatest ? 'var(--brand-accent)' : '#ff9f0a',
-                                                                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
-                                                                boxShadow: isLatest ? '0 4px 12px rgba(0,0,0,0.1)' : 'none'
+                                                                position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, 
+                                                                background: isCritical ? '#ff3b30' : 'var(--brand-accent)' 
+                                                            }} />
+                                                        )}
+                                                        
+                                                        <div style={{ 
+                                                            width: isLatest ? 48 : 40, height: isLatest ? 48 : 40, borderRadius: '50%', 
+                                                            background: isCritical ? '#ff3b30' : isLatest ? 'var(--brand-accent)' : '#ff9f0a',
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                                                            boxShadow: isLatest ? '0 4px 12px rgba(0,0,0,0.1)' : 'none'
+                                                        }}>
+                                                            <ShieldAlert size={isLatest ? 24 : 20} strokeWidth={2.5} />
+                                                        </div>
+                                                        
+                                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                                                <span style={{ fontWeight: 800, fontSize: isLatest ? 15 : 14, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {alert.userName}
+                                                                </span>
+                                                                <span style={{ fontSize: 10, fontWeight: 700, color: '#999', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: isLatest ? '#30d158' : '#ccc' }} />
+                                                                    {new Date(alert.timestamp || alert.receivedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                                </span>
+                                                            </div>
+                                                            
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: isCritical ? '#ff3b30' : '#444' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', fontSize: 11 }}>
+                                                                    {alert.flagType === 'tab_switch' ? <><Layout size={13} /> TAB BREACH</> :
+                                                                     alert.flagType === 'fullscreen_exit' ? <><ExternalLink size={13} /> FULLSCREEN EXIT</> :
+                                                                     alert.flagType === 'page_blur' ? <><AlertCircle size={13} /> FOCUS LOST</> :
+                                                                     alert.flagType === 'refresh' ? <><RefreshCcw size={13} /> RELOAD ATTEMPT</> :
+                                                                     <><ShieldAlert size={13} /> SECURITY ALERT</>}
+                                                                </div>
+                                                                <span style={{ opacity: 0.3 }}>|</span>
+                                                                <span style={{ fontWeight: 900, background: isCritical ? '#ff3b30' : 'rgba(0,0,0,0.06)', color: isCritical ? 'white' : '#555', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>
+                                                                    FLAG #{alert.flagCount}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        {isCritical && (
+                                                            <div style={{ 
+                                                                fontSize: 10, fontWeight: 900, color: 'white', background: '#ff3b30', 
+                                                                padding: '4px 10px', borderRadius: 10, textTransform: 'uppercase', 
+                                                                letterSpacing: '0.05em', boxShadow: '0 4px 10px rgba(255,59,48,0.3)'
                                                             }}>
-                                                                <ShieldAlert size={isLatest ? 24 : 20} strokeWidth={2.5} />
+                                                                TERMINATED
                                                             </div>
-                                                            
-                                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                                                                    <span style={{ fontWeight: 800, fontSize: isLatest ? 15 : 14, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                        {alert.userName}
-                                                                    </span>
-                                                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#999', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: isLatest ? '#30d158' : '#ccc' }} />
-                                                                        {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                                    </span>
-                                                                </div>
-                                                                
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: isCritical ? '#ff3b30' : '#444' }}>
-                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', fontSize: 11 }}>
-                                                                        {alert.flagType === 'tab_switch' ? <><Layout size={13} /> TAB BREACH</> :
-                                                                         alert.flagType === 'fullscreen_exit' ? <><ExternalLink size={13} /> FULLSCREEN EXIT</> :
-                                                                         alert.flagType === 'page_blur' ? <><AlertCircle size={13} /> FOCUS LOST</> :
-                                                                         alert.flagType === 'refresh' ? <><RefreshCcw size={13} /> RELOAD ATTEMPT</> :
-                                                                         <><ShieldAlert size={13} /> SECURITY ALERT</>}
-                                                                    </div>
-                                                                    <span style={{ opacity: 0.3 }}>|</span>
-                                                                    <span style={{ fontWeight: 900, background: isCritical ? '#ff3b30' : 'rgba(0,0,0,0.06)', color: isCritical ? 'white' : '#555', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>
-                                                                        FLAG #{alert.flagCount}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                            
-                                                            {isCritical && (
-                                                                <div style={{ 
-                                                                    fontSize: 10, fontWeight: 900, color: 'white', background: '#ff3b30', 
-                                                                    padding: '4px 10px', borderRadius: 10, textTransform: 'uppercase', 
-                                                                    letterSpacing: '0.05em', boxShadow: '0 4px 10px rgba(255,59,48,0.3)'
-                                                                }}>
-                                                                    TERMINATED
-                                                                </div>
-                                                            )}
-                                                        </motion.div>
-                                                    );
-                                                })
-                                            )}
-                                        </AnimatePresence>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
                                     </div>
                                 </div>
 

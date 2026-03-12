@@ -360,11 +360,13 @@ export const reportFlag = async (req, res) => {
         // Emit real-time flag event to admin via Socket.IO
         const io = req.app.get('io');
         if (io) {
-            io.to(`admin:${actualQuizId}`).emit('flag:update', {
+            const roomName = `admin:${actualQuizId.toString()}`;
+            console.log(`📡 Emitting flag update to room ${roomName} for user ${user?.name}`);
+            io.to(roomName).emit('flag:update', {
                 userId,
                 userName: user?.name || 'Unknown',
                 userEmail: user?.email || '',
-                quizId: actualQuizId,
+                quizId: actualQuizId.toString(),
                 flagType,
                 flagCount: quizState.flagCount,
                 flagEvents: quizState.flagEvents,

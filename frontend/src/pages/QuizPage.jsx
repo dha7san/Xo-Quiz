@@ -71,15 +71,20 @@ const QuizPage = () => {
 
     const reportFlag = useCallback(async (flagType) => {
         try {
+            console.log(`🛡 Reporting Security Violation: ${flagType}`);
             const res = await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/flag`,
                 { quizId: quiz?._id || quizCode, flagType },
                 { headers: { Authorization: `Bearer ${user.token}` } }
             );
+            console.log(`✅ Flag Reported. New count: ${res.data.flagCount}`);
             flagCountRef.current = res.data.flagCount;
             setFlagCount(res.data.flagCount);
             return res.data.flagCount;
-        } catch { return flagCountRef.current; }
-    }, [quizCode, user.token]);
+        } catch (err) { 
+            console.error('❌ Failed to report flag:', err);
+            return flagCountRef.current; 
+        }
+    }, [quizCode, user.token, quiz?._id]);
 
     /* Load quiz info */
     useEffect(() => {
