@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { motion } from 'framer-motion';
+import { ArrowRight, KeyRound, Clock, CalendarDays, Activity, Medal, CheckCircle2 } from 'lucide-react';
 
 const UserDashboard = () => {
     const [quizzes, setQuizzes] = useState([]);
@@ -37,131 +39,224 @@ const UserDashboard = () => {
     const formatTime = (t) => {
         if (!t) return null;
         const d = new Date(t), now = new Date(), diff = d - now;
-        if (diff < 0) return { text: 'Started', color: 'var(--color-success)' };
-        if (diff < 10 * 60000) return { text: `Starts in ${Math.ceil(diff / 60000)}m`, color: 'var(--color-warning)' };
-        return { text: d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), color: 'var(--color-text-secondary)' };
+        if (diff < 0) return { text: 'Started', color: 'var(--color-success)', active: true };
+        if (diff < 10 * 60000) return { text: `Starts in ${Math.ceil(diff / 60000)}m`, color: 'var(--color-warning)', active: false };
+        return { text: d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), color: 'var(--color-text-secondary)', active: false };
     };
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
+    const containerVariants = {
+        hidden: { opacity: 0 },
+        show: { opacity: 1, transition: { staggerChildren: 0.1 } }
+    };
+
+    const itemVariants = {
+        hidden: { opacity: 0, y: 20 },
+        show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 300, damping: 24 } }
+    };
+
     return (
-        <div className="page-in">
-            {/* Welcome Row */}
-            <div style={{ marginBottom: 28, display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <motion.div 
+            className="page-wrap"
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+        >
+            {/* Header Section */}
+            <motion.div variants={itemVariants} style={{ marginBottom: 40, display: 'flex', flexWrap: 'wrap', gap: 24, justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
-                    <h1 style={{ fontSize: 'clamp(20px,4vw,28px)', fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 4 }}>
-                        {greeting}, {user.name?.split(' ')[0]} 👋
+                    <h1 style={{ fontSize: 'clamp(28px, 5vw, 42px)', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 8, color: '#111' }}>
+                        {greeting}, <br />
+                        <span style={{ background: 'linear-gradient(135deg, #6c63ff 0%, #a29bfe 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                            {user.name?.split(' ')[0]}
+                        </span> 👋
                     </h1>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: 14 }}>
-                        SVHEC Quiz Portal · {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+                    <p style={{ color: '#666', fontSize: 16, fontWeight: 500, letterSpacing: '-0.01em' }}>
+                        Ready to test your knowledge today?
                     </p>
                 </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button className="btn btn-ghost btn-sm btn-pill" onClick={() => navigate('/my-results')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                
+                <div style={{ display: 'flex', gap: 12 }}>
+                    <button 
+                        onClick={() => navigate('/my-results')} 
+                        style={{ 
+                            padding: '12px 20px', borderRadius: 16, border: '1px solid rgba(0,0,0,0.08)',
+                            background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(10px)',
+                            display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14,
+                            color: '#444', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.06)'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.03)'; }}
+                    >
+                        <Activity size={18} strokeWidth={2.5} color="#6c63ff" />
                         My Results
                     </button>
-                    <button className="btn btn-primary btn-sm btn-pill" onClick={() => navigate('/leaderboard')} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    <button 
+                        onClick={() => navigate('/leaderboard')} 
+                        style={{ 
+                            padding: '12px 20px', borderRadius: 16, border: 'none',
+                            background: '#111', color: 'white',
+                            display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: 14,
+                            cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 4px 14px rgba(0,0,0,0.1)'
+                        }}
+                        onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.background = '#222'; }}
+                        onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.background = '#111'; }}
+                    >
+                        <Medal size={18} strokeWidth={2.5} color="#f8b400" />
                         Leaderboard
                     </button>
                 </div>
-            </div>
+            </motion.div>
 
-            {/* Join Box */}
-            <div style={{
-                borderRadius: 24, marginBottom: 36, overflow: 'hidden',
-                background: 'linear-gradient(140deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)',
-                padding: 'clamp(24px,5vw,36px)',
-            }}>
-                <div style={{ maxWidth: 540 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(108,99,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
-                            🔑
+            {/* Quick Join Card */}
+            <motion.div variants={itemVariants} style={{ marginBottom: 48 }}>
+                <div style={{
+                    position: 'relative', borderRadius: 28, overflow: 'hidden',
+                    background: 'white', border: '1px solid rgba(0,0,0,0.04)',
+                    boxShadow: '0 20px 40px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.02)',
+                    display: 'flex', flexWrap: 'wrap'
+                }}>
+                    <div style={{ position: 'absolute', top: '-50%', right: '-10%', width: '50%', height: '200%', background: 'radial-gradient(circle, rgba(108,99,255,0.06) 0%, rgba(255,255,255,0) 70%)', pointerEvents: 'none' }} />
+                    
+                    <div style={{ flex: '1 1 300px', padding: 'clamp(24px, 5vw, 40px)' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 14px', background: 'rgba(108,99,255,0.1)', color: '#6c63ff', borderRadius: 100, fontWeight: 700, fontSize: 13, marginBottom: 20 }}>
+                            <KeyRound size={14} strokeWidth={3} /> Have a code?
                         </div>
-                        <div>
-                            <h2 style={{ color: 'white', fontWeight: 700, fontSize: 17, marginBottom: 3 }}>Enter Quiz Code</h2>
-                            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>Get the code from your instructor or admin</p>
-                        </div>
-                    </div>
-
-                    <form onSubmit={handleJoin}>
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <h2 style={{ fontSize: 'clamp(24px, 3vw, 32px)', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: 12, color: '#111' }}>
+                            Join a Private Quiz
+                        </h2>
+                        <p style={{ color: '#666', fontSize: 16, lineHeight: 1.5, marginBottom: 28, maxWidth: 400 }}>
+                            Enter the unique 6-character code provided by your instructor to instantly access your assessment.
+                        </p>
+                        
+                        <form onSubmit={handleJoin} style={{ display: 'flex', gap: 12, maxWidth: 460 }}>
                             <input
                                 type="text"
-                                placeholder="e.g.  ECE2026"
+                                placeholder="CODE !!"
                                 value={joinCode}
                                 onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError(''); }}
                                 style={{
-                                    flex: '1 1 180px', minWidth: 140, padding: '13px 18px',
-                                    background: 'rgba(255,255,255,0.1)', border: joinError ? '1.5px solid rgba(255,80,70,0.6)' : '1.5px solid rgba(255,255,255,0.14)',
-                                    borderRadius: 14, color: 'white', fontSize: 17, fontWeight: 700,
-                                    letterSpacing: '0.1em', fontFamily: 'inherit', outline: 'none',
-                                    transition: 'border-color 160ms',
+                                    flex: 1, padding: '16px 20px', fontSize: 18, fontWeight: 700,
+                                    letterSpacing: '0.1em', color: '#111', background: '#f8f9fa',
+                                    border: joinError ? '2px solid rgba(255,59,48,0.5)' : '2px solid transparent',
+                                    borderRadius: 16, outline: 'none', transition: 'all 0.2s',
+                                    textTransform: 'uppercase'
                                 }}
+                                onFocus={(e) => { if(!joinError) e.target.style.border = '2px solid rgba(108,99,255,0.3)'; e.target.style.background = 'white'; e.target.style.boxShadow = '0 0 0 4px rgba(108,99,255,0.08)'; }}
+                                onBlur={(e) => { if(!joinError) e.target.style.border = '2px solid transparent'; e.target.style.background = '#f8f9fa'; e.target.style.boxShadow = 'none'; }}
                             />
-                            <button type="submit" disabled={joining} style={{
-                                padding: '13px 26px', borderRadius: 14, border: 'none',
-                                background: joining ? 'rgba(255,255,255,0.2)' : 'white',
-                                color: joining ? 'rgba(255,255,255,0.5)' : 'var(--brand-accent)',
-                                fontWeight: 700, fontSize: 15, fontFamily: 'inherit',
-                                cursor: joining ? 'not-allowed' : 'pointer',
-                                transition: 'all 200ms ease', whiteSpace: 'nowrap',
-                                flexShrink: 0,
-                            }}>
-                                {joining ? 'Joining…' : 'Join Quiz →'}
+                            <button 
+                                type="submit" 
+                                disabled={joining || !joinCode.trim()} 
+                                style={{
+                                    padding: '0 28px', borderRadius: 16, border: 'none',
+                                    background: (joining || !joinCode.trim()) ? '#e2e2ea' : '#6c63ff',
+                                    color: (joining || !joinCode.trim()) ? '#a0a0ab' : 'white',
+                                    fontWeight: 700, fontSize: 16, cursor: (joining || !joinCode.trim()) ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: 8
+                                }}
+                            >
+                                {joining ? 'Verifying...' : 'Join'} <ArrowRight size={18} strokeWidth={3} />
                             </button>
-                        </div>
-                        {joinError && <p style={{ marginTop: 10, color: '#ff9f9b', fontSize: 13 }}>⚠ {joinError}</p>}
-                    </form>
+                        </form>
+                        {joinError && (
+                            <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ color: '#ff3b30', fontSize: 14, fontWeight: 500, marginTop: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                ⚠ {joinError}
+                            </motion.p>
+                        )}
+                    </div>
                 </div>
-            </div>
+            </motion.div>
 
-            {/* Active Quizzes */}
-            <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, letterSpacing: '-0.01em' }}>Active Quizzes</h2>
-            {loading ? (
-                <div className="grid-auto">
-                    {[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 140, borderRadius: 20 }} />)}
+            {/* Active Quizzes Grid */}
+            <motion.div variants={itemVariants}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+                    <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: '#111' }}>Live & Upcoming</h2>
+                    {quizzes.length > 0 && <span style={{ background: 'rgba(0,0,0,0.05)', padding: '4px 12px', borderRadius: 100, fontSize: 13, fontWeight: 600, color: '#555' }}>{quizzes.length} available</span>}
                 </div>
-            ) : quizzes.length === 0 ? (
-                <div className="card" style={{ padding: '52px 24px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 44, marginBottom: 14 }}>⏰</div>
-                    <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>No active quizzes</h3>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: 14 }}>Check back soon, or use a quiz code above to join directly.</p>
-                </div>
-            ) : (
-                <div className="grid-auto">
-                    {quizzes.map(quiz => {
-                        const ti = formatTime(quiz.startTime);
-                        return (
-                            <div key={quiz._id} className="card card-hover" style={{ padding: 22 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                                    <div style={{ width: 44, height: 44, borderRadius: 14, background: 'rgba(108,99,255,0.09)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <svg width="22" height="22" fill="none" stroke="var(--brand-accent)" strokeWidth="1.7" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25z" /></svg>
+
+                {loading ? (
+                    <div className="grid-auto">
+                        {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 180, borderRadius: 24 }} />)}
+                    </div>
+                ) : quizzes.length === 0 ? (
+                    <div style={{ padding: '60px 24px', textAlign: 'center', background: 'white', borderRadius: 28, border: '1px dashed rgba(0,0,0,0.1)' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: '50%', background: '#f8f9fa', marginBottom: 20 }}>
+                            <CalendarDays size={28} color="#aaa" />
+                        </div>
+                        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#333' }}>No public quizzes running</h3>
+                        <p style={{ color: '#777', fontSize: 15, maxWidth: 300, margin: '0 auto' }}>Quizzes will appear here automatically when the admin starts them.</p>
+                    </div>
+                ) : (
+                    <div className="grid-auto" style={{ gap: 20 }}>
+                        {quizzes.map(quiz => {
+                            const ti = formatTime(quiz.startTime);
+                            const isActive = ti?.active;
+
+                            return (
+                                <motion.div 
+                                    key={quiz._id} 
+                                    whileHover={{ y: -6, boxShadow: '0 20px 40px rgba(0,0,0,0.06)' }}
+                                    style={{ 
+                                        padding: 24, background: 'white', borderRadius: 24, 
+                                        border: '1px solid rgba(0,0,0,0.05)', position: 'relative', overflow: 'hidden',
+                                        display: 'flex', flexDirection: 'column', height: '100%',
+                                        transition: 'border-color 0.3s'
+                                    }}
+                                >
+                                    {isActive && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: 'linear-gradient(90deg, #30d158, #34c759)' }} />}
+                                    
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                                        <div style={{ 
+                                            width: 48, height: 48, borderRadius: 16, 
+                                            background: isActive ? 'rgba(48,209,88,0.1)' : '#f5f5f7', 
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            color: isActive ? '#30d158' : '#888'
+                                        }}>
+                                            {isActive ? <CheckCircle2 size={24} strokeWidth={2.5} /> : <CalendarDays size={24} strokeWidth={2} />}
+                                        </div>
+                                        
+                                        {isActive ? (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: 'rgba(48,209,88,0.1)', color: '#24a148', borderRadius: 100, fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#30d158', animation: 'timerPulse 1.5s infinite' }} />
+                                                Live Now
+                                            </span>
+                                        ) : (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', background: '#f5f5f7', color: '#666', borderRadius: 100, fontSize: 12, fontWeight: 600 }}>
+                                                Upcoming
+                                            </span>
+                                        )}
                                     </div>
-                                    <span className="badge badge-green" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'green', display: 'inline-block' }} />
-                                        Live
-                                    </span>
-                                </div>
-                                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, lineHeight: 1.35 }}>{quiz.title}</h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                                        {quiz.duration} minutes
-                                    </span>
-                                    {ti && <span style={{ fontSize: 12, color: ti.color, fontWeight: 500 }}>📅 {ti.text}</span>}
-                                </div>
-                                <div style={{ marginTop: 14, padding: '7px 12px', borderRadius: 10, background: 'var(--brand-accent-glow)', textAlign: 'center', fontSize: 12, color: 'var(--brand-accent)', fontWeight: 600 }}>
-                                    🔑 Enter code to join
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
+                                    
+                                    <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 12, lineHeight: 1.3, color: '#111', flex: 1 }}>{quiz.title}</h3>
+                                    
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#666', fontWeight: 500 }}>
+                                            <Clock size={16} /> {quiz.duration} mins time limit
+                                        </div>
+                                        {ti && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: ti.active ? '#30d158' : '#888', fontWeight: 600 }}>
+                                                <CalendarDays size={16} /> {ti.text}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{ 
+                                        padding: '12px', borderRadius: 14, background: '#f8f9fa', 
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                        fontSize: 14, color: '#555', fontWeight: 600, border: '1px dashed rgba(0,0,0,0.1)'
+                                    }}>
+                                        <KeyRound size={16} opacity={0.6}/> Enter code in the box above
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                )}
+            </motion.div>
+        </motion.div>
     );
 };
 

@@ -71,51 +71,143 @@ const BlockedScreen = () => {
   );
 };
 
+import { Menu, X } from 'lucide-react';
+
 /* ── Header ─────────────────────────────────────────── */
 const Header = () => {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  
   if (!user) return null;
-
   const isAdmin = user.role === 'admin';
 
+  // Add subtle shadow on scroll
+  React.useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Close mobile menu when navigating
+  const navigate = (path) => {
+    setMenuOpen(false);
+    nav(path);
+  };
+
   return (
-    <header className="app-header">
-      <div className="header-inner">
-        {/* Brand */}
-        <button onClick={() => nav('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, padding: 0 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: 'linear-gradient(135deg,#6c63ff,#a29bfe)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(108,99,255,0.28)', flexShrink: 0 }}>
-            <span style={{ color: 'white', fontWeight: 900, fontSize: 12 }}>SV</span>
+    <>
+      <header className={`app-header ${scrolled ? 'scrolled' : ''}`}>
+        <div className="header-inner">
+          
+          {/* Left: XO Logo */}
+          <button 
+            onClick={() => navigate('/')} 
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+          >
+            <div className="xo-splatter-container" style={{ height: '42px', display: 'flex', alignItems: 'center' }}>
+              <img 
+                src="/Xo.png" 
+                alt="XO Logo" 
+                style={{ height: '100%', width: 'auto', objectFit: 'contain', mixBlendMode: 'multiply' }} 
+              />
+            </div>
+          </button>
+
+          {/* Right: Desktop Navigation Container */}
+          <div className="desktop-nav">
+            {isAdmin ? (
+              /* Admin Signature */
+              <div className="dev-signature">
+                <span className="dev-bracket">&lt;</span>
+                Dharsan Xo/
+                <span className="dev-bracket">&gt;</span>
+              </div>
+            ) : (
+              /* User Navigation */
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button className="nav-link" style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => navigate('/my-results')}>Results</button>
+                <button className="nav-link" style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => navigate('/leaderboard')}>Leaderboard</button>
+              </div>
+            )}
+
+            <div style={{ width: 1, height: 24, background: 'rgba(0,0,0,0.1)', margin: '0 8px' }} />
+
+            {/* User Chip */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ 
+                width: 28, height: 28, borderRadius: '50%', 
+                background: '#111', display: 'flex', alignItems: 'center', 
+                justifyContent: 'center', color: 'white', fontWeight: 600, fontSize: 12 
+              }}>
+                D
+              </div>
+              <button 
+                onClick={logout} 
+                style={{ 
+                  background: 'none', border: 'none', fontSize: 13, 
+                  fontWeight: 500, color: '#666', cursor: 'pointer',
+                  padding: '4px 8px', borderRadius: 6, transition: 'background 0.2s',
+                }}
+                onMouseOver={(e) => e.target.style.background = 'rgba(0,0,0,0.05)'}
+                onMouseOut={(e) => e.target.style.background = 'none'}
+              >
+                Sign out
+              </button>
+            </div>
           </div>
-          <div style={{ lineHeight: 1 }}>
-            <div className="brand-logo" style={{ fontSize: 16 }}>SVHEC</div>
-            <div style={{ fontSize: 9, color: 'var(--color-text-tertiary)', letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500 }}>Quiz Portal</div>
+
+          {/* Mobile Hamburger Button */}
+          <button className="mobile-menu-btn" onClick={() => setMenuOpen(!menuOpen)}>
+            {menuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+
+        </div>
+      </header>
+
+      {/* Mobile Navigation Dropdown Overlay */}
+      <div className={`mobile-nav-overlay ${menuOpen ? 'open' : ''}`}>
+        
+        {isAdmin ? (
+          <div className="dev-signature" style={{ alignSelf: 'flex-start', marginBottom: 16 }}>
+            <span className="dev-bracket">&lt;</span>
+            Dharsan Xo/
+            <span className="dev-bracket">&gt;</span>
           </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+            <button className="nav-link" style={{ paddingLeft: 0, fontSize: 18, background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => navigate('/')}>Dashboard</button>
+            <button className="nav-link" style={{ paddingLeft: 0, fontSize: 18, background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => navigate('/my-results')}>Results</button>
+            <button className="nav-link" style={{ paddingLeft: 0, fontSize: 18, background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => navigate('/leaderboard')}>Leaderboard</button>
+          </div>
+        )}
+
+        <div style={{ height: 1, background: 'rgba(0,0,0,0.1)', margin: '8px 0' }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
+          <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 600, fontSize: 14 }}>
+            {user.name?.charAt(0).toUpperCase()}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>{user.name}</div>
+            <div style={{ fontSize: 13, color: '#666' }}>{user.email}</div>
+          </div>
+        </div>
+
+        <button 
+          onClick={logout} 
+          style={{ 
+            marginTop: 'auto', padding: '16px', borderRadius: 12,
+            background: 'rgba(0,0,0,0.04)', color: '#333', border: 'none',
+            fontSize: 16, fontWeight: 600, cursor: 'pointer'
+          }}
+        >
+          Sign Out
         </button>
 
-        {/* Right */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {isAdmin && <span className="badge badge-purple" style={{ display: 'none' }} id="admin-badge">Admin</span>}
-          
-          {/* User chip */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 12px 5px 6px', borderRadius: 100, background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
-            <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#6c63ff,#a29bfe)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: 11, flexShrink: 0 }}>
-              {user.name?.charAt(0).toUpperCase()}
-            </div>
-            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--color-text-primary)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user.name?.split(' ')[0]}
-            </span>
-            {isAdmin && <span style={{ fontSize: 10, background: 'var(--brand-accent-glow)', color: 'var(--brand-accent)', padding: '1px 6px', borderRadius: 100, fontWeight: 700 }}>Admin</span>}
-          </div>
-
-          {/* Logout */}
-          <button onClick={logout} className="btn btn-ghost btn-sm btn-pill" style={{ fontSize: 13, padding: '7px 14px' }}>
-            Sign out
-          </button>
-        </div>
       </div>
-    </header>
+    </>
   );
 };
 
