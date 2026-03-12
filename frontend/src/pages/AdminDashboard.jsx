@@ -59,6 +59,12 @@ const NeuButton = ({ children, onClick, type = 'button', variant = 'default', sm
     );
 };
 
+// Converts a Date to the format required by datetime-local inputs (local time, not UTC)
+const toLocalInputValue = (date) => {
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date - offset).toISOString().slice(0, 16);
+};
+
 const TABS = [
     { id: 'quizzes', label: '📋 Quizzes' },
     { id: 'questions', label: '❓ Questions' },
@@ -81,7 +87,7 @@ const AdminDashboard = () => {
     const [title, setTitle] = useState('');
     const [quizCode, setQuizCode] = useState('');
     const [duration, setDuration] = useState(30);
-    const [startTime, setStartTime] = useState(new Date().toISOString().slice(0, 16));
+    const [startTime, setStartTime] = useState(toLocalInputValue(new Date()));
 
     const [selectedQuizId, setSelectedQuizId] = useState('');
     const [question, setQuestion] = useState('');
@@ -176,7 +182,9 @@ const AdminDashboard = () => {
     };
     const handleCreateQuiz = async (e) => {
         e.preventDefault();
-        await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/create-quiz`, { title, quizCode, duration, startTime }, { headers: { Authorization: `Bearer ${user.token}` } }).catch(e => { alert(e.response?.data?.message || 'Error'); return null; }).then(res => { if (res) { setTitle(''); setQuizCode(''); setDuration(30); fetchQuizzes(); } });
+        // Convert the datetime-local value (local time) → UTC ISO string before sending
+        const startTimeUTC = new Date(startTime).toISOString();
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/create-quiz`, { title, quizCode, duration, startTime: startTimeUTC }, { headers: { Authorization: `Bearer ${user.token}` } }).catch(e => { alert(e.response?.data?.message || 'Error'); return null; }).then(res => { if (res) { setTitle(''); setQuizCode(''); setDuration(30); setStartTime(toLocalInputValue(new Date())); fetchQuizzes(); } });
     };
     const handleAddQuestion = async (e) => {
         e.preventDefault();

@@ -37,6 +37,7 @@ const QuizPage = () => {
     const [answers, setAnswers] = useState({});
     const [loading, setLoading] = useState(true);
     const [timeLeft, setTimeLeft] = useState(0);
+    const timeLeftRef = useRef(0);
     const [submitting, setSubmitting] = useState(false);
     const [result, setResult] = useState(null);
     const [quizStarted, setQuizStarted] = useState(false);
@@ -55,10 +56,11 @@ const QuizPage = () => {
     const resultRef     = useRef(null);
     const warningTimer  = useRef(null);
 
-    useEffect(() => { answersRef.current   = answers;    }, [answers]);
+    useEffect(() => { answersRef.current    = answers;    }, [answers]);
     useEffect(() => { quizStartedRef.current = quizStarted; }, [quizStarted]);
-    useEffect(() => { submittingRef.current  = submitting;   }, [submitting]);
-    useEffect(() => { resultRef.current      = result;       }, [result]);
+    useEffect(() => { submittingRef.current  = submitting;  }, [submitting]);
+    useEffect(() => { resultRef.current      = result;      }, [result]);
+    useEffect(() => { timeLeftRef.current    = timeLeft;    }, [timeLeft]);
 
     const showWarning = (msg) => {
         clearTimeout(warningTimer.current);
@@ -96,28 +98,36 @@ const QuizPage = () => {
             .finally(() => setLoading(false));
     }, [id, user.token, navigate]);
 
-    /* Timer */
+    /* Timer — single stable interval, not recreated every second */
     useEffect(() => {
         if (!quizStarted || submitting || result) return;
-        if (timeLeft <= 0) { handleSubmit(true); return; }
-        const t = setInterval(() => setTimeLeft(p => p - 1), 1000);
+        const t = setInterval(() => {
+            setTimeLeft(prev => {
+                if (prev <= 1) {
+                    clearInterval(t);
+                    handleSubmit(true);
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
         return () => clearInterval(t);
-    }, [timeLeft, quizStarted, submitting, result]);
+    }, [quizStarted, submitting, result]); // ✅ no timeLeft dep — interval is stable
 
-    /* Auto-save every 10s */
+    /* Auto-save every 10s — reads timeLeft via ref so interval never resets */
     useEffect(() => {
         if (!quizStarted || submitting || result) return;
         const t = setInterval(async () => {
             try {
                 setIsSaving(true);
                 await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/save`,
-                    { quizId: id, answers: answersRef.current, timeRemaining: timeLeft },
+                    { quizId: id, answers: answersRef.current, timeRemaining: timeLeftRef.current },
                     { headers: { Authorization: `Bearer ${user.token}` } }
                 );
             } catch { } finally { setTimeout(() => setIsSaving(false), 600); }
         }, 10000);
         return () => clearInterval(t);
-    }, [quizStarted, submitting, result, id, user.token, timeLeft]);
+    }, [quizStarted, submitting, result, id, user.token]); // ✅ no timeLeft dep
 
     /* Anti-cheat */
     useEffect(() => {
