@@ -77,15 +77,21 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
+// Export app for Vercel
+export default app;
 
-// Start server immediately (required for many cloud platforms to pass health checks)
-httpServer.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+// Start server locally or on traditional VPS
+// (Vercel will ignore this and use the exported app)
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    httpServer.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
 
 // Connect to MongoDB independently
 mongoose
     .connect(process.env.MONGODB_URI)
     .then(() => console.log("Connected to MongoDB"))
     .catch((error) => console.log("MongoDB connection error:", error));
+
 
