@@ -423,69 +423,98 @@ const AdminDashboard = () => {
                                         </h4>
                                     </div>
                                     
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minHeight: flagAlerts.length > 0 ? 'auto' : 80 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: flagAlerts.length > 0 ? 'auto' : 80 }}>
                                         <AnimatePresence mode="popLayout">
                                             {flagAlerts.length === 0 ? (
                                                 <motion.div 
                                                     initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                                                    style={{ padding: '24px', textAlign: 'center', background: 'rgba(0,0,0,0.02)', borderRadius: 16, border: '1px dashed rgba(0,0,0,0.1)', color: '#999', fontSize: 13 }}
+                                                    style={{ padding: '32px 24px', textAlign: 'center', background: 'rgba(0,0,0,0.02)', borderRadius: 20, border: '2px dashed rgba(0,0,0,0.08)', color: '#999', fontSize: 13 }}
                                                 >
-                                                    <Terminal size={20} style={{ marginBottom: 8, opacity: 0.5 }} /><br/>
-                                                    Listening for real-time events...
+                                                    <div style={{ display: 'inline-flex', padding: 12, borderRadius: 12, background: 'rgba(0,0,0,0.03)', marginBottom: 12 }}>
+                                                        <Terminal size={24} style={{ opacity: 0.4 }} />
+                                                    </div>
+                                                    <p style={{ fontWeight: 600, letterSpacing: '0.01em' }}>System Active. Listening for real-time events...</p>
+                                                    <p style={{ fontSize: 11, marginTop: 4 }}>Updates will appear here as soon as they are detected.</p>
                                                 </motion.div>
                                             ) : (
-                                                flagAlerts.map((alert) => (
-                                                    <motion.div
-                                                        key={alert.id}
-                                                        initial={{ x: -20, opacity: 0, scale: 0.95 }}
-                                                        animate={{ x: 0, opacity: 1, scale: 1 }}
-                                                        exit={{ x: 20, opacity: 0 }}
-                                                        layout
-                                                        style={{
-                                                            padding: '12px 16px', borderRadius: 16,
-                                                            background: alert.flagCount >= 3 ? 'rgba(255, 59, 48, 0.08)' : 'white',
-                                                            border: `1px solid ${alert.flagCount >= 3 ? 'rgba(255, 59, 48, 0.2)' : 'rgba(0, 0, 0, 0.04)'}`,
-                                                            boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                                                            display: 'flex', alignItems: 'center', gap: 14
-                                                        }}
-                                                    >
-                                                        <div style={{ 
-                                                            width: 40, height: 40, borderRadius: '50%', 
-                                                            background: alert.flagCount >= 3 ? '#ff3b30' : '#ff9f0a',
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white'
-                                                        }}>
-                                                            <ShieldAlert size={20} />
-                                                        </div>
-                                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                                                                <span style={{ fontWeight: 800, fontSize: 14, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                                    {alert.userName || 'Anonymous User'}
-                                                                </span>
-                                                                <span style={{ fontSize: 10, fontWeight: 600, color: '#999', flexShrink: 0 }}>
-                                                                    {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                                                                </span>
+                                                flagAlerts.map((alert, idx) => {
+                                                    const isLatest = idx === 0;
+                                                    const isCritical = alert.flagCount >= 3;
+                                                    
+                                                    return (
+                                                        <motion.div
+                                                            key={alert.id}
+                                                            initial={{ x: -30, opacity: 0, scale: 0.9 }}
+                                                            animate={{ 
+                                                                x: 0, opacity: 1, scale: isLatest ? 1.02 : 1,
+                                                                boxShadow: isLatest ? `0 0 20px ${isCritical ? 'rgba(255, 59, 48, 0.15)' : 'rgba(108, 99, 255, 0.1)'}` : '0 4px 12px rgba(0,0,0,0.03)'
+                                                            }}
+                                                            exit={{ x: 30, opacity: 0 }}
+                                                            layout
+                                                            style={{
+                                                                padding: isLatest ? '18px 20px' : '14px 18px', 
+                                                                borderRadius: 20,
+                                                                background: isCritical ? 'rgba(255, 59, 48, 0.05)' : isLatest ? 'white' : 'rgba(255,255,255,0.6)',
+                                                                border: `1px solid ${isCritical ? 'rgba(255, 59, 48, 0.3)' : isLatest ? 'rgba(108, 99, 255, 0.2)' : 'rgba(0, 0, 0, 0.04)'}`,
+                                                                display: 'flex', alignItems: 'center', gap: 16,
+                                                                position: 'relative', overflow: 'hidden'
+                                                            }}
+                                                        >
+                                                            {/* Brand indicator for latest */}
+                                                            {isLatest && (
+                                                                <div style={{ 
+                                                                    position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, 
+                                                                    background: isCritical ? '#ff3b30' : 'var(--brand-accent)' 
+                                                                }} />
+                                                            )}
+                                                            
+                                                            <div style={{ 
+                                                                width: isLatest ? 48 : 40, height: isLatest ? 48 : 40, borderRadius: '50%', 
+                                                                background: isCritical ? '#ff3b30' : isLatest ? 'var(--brand-accent)' : '#ff9f0a',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white',
+                                                                boxShadow: isLatest ? '0 4px 12px rgba(0,0,0,0.1)' : 'none'
+                                                            }}>
+                                                                <ShieldAlert size={isLatest ? 24 : 20} strokeWidth={2.5} />
                                                             </div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: alert.flagCount >= 3 ? '#ff3b30' : '#666' }}>
-                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                                                                    {alert.flagType === 'tab_switch' ? <><Layout size={13} /> Tab Switch</> :
-                                                                     alert.flagType === 'fullscreen_exit' ? <><ExternalLink size={13} /> Fullscreen Exit</> :
-                                                                     alert.flagType === 'page_blur' ? <><AlertCircle size={13} /> Focus Lost</> :
-                                                                     alert.flagType === 'refresh' ? <><RefreshCcw size={13} /> Page Refresh</> :
-                                                                     <><ShieldAlert size={13} /> {alert.flagType?.replace('_', ' ') || 'Unknown Violation'}</>}
+                                                            
+                                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                                                    <span style={{ fontWeight: 800, fontSize: isLatest ? 15 : 14, color: '#111', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                        {alert.userName}
+                                                                    </span>
+                                                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#999', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: isLatest ? '#30d158' : '#ccc' }} />
+                                                                        {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                                                    </span>
                                                                 </div>
-                                                                <span style={{ opacity: 0.4 }}>•</span>
-                                                                <span style={{ fontWeight: 800, color: alert.flagCount >= 3 ? '#ff3b30' : 'var(--brand-accent)' }}>
-                                                                    Flag #{alert.flagCount}
-                                                                </span>
+                                                                
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: isCritical ? '#ff3b30' : '#444' }}>
+                                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.02em', fontSize: 11 }}>
+                                                                        {alert.flagType === 'tab_switch' ? <><Layout size={13} /> TAB BREACH</> :
+                                                                         alert.flagType === 'fullscreen_exit' ? <><ExternalLink size={13} /> FULLSCREEN EXIT</> :
+                                                                         alert.flagType === 'page_blur' ? <><AlertCircle size={13} /> FOCUS LOST</> :
+                                                                         alert.flagType === 'refresh' ? <><RefreshCcw size={13} /> RELOAD ATTEMPT</> :
+                                                                         <><ShieldAlert size={13} /> SECURITY ALERT</>}
+                                                                    </div>
+                                                                    <span style={{ opacity: 0.3 }}>|</span>
+                                                                    <span style={{ fontWeight: 900, background: isCritical ? '#ff3b30' : 'rgba(0,0,0,0.06)', color: isCritical ? 'white' : '#555', padding: '1px 6px', borderRadius: 4, fontSize: 10 }}>
+                                                                        FLAG #{alert.flagCount}
+                                                                    </span>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                        {alert.flagCount >= 3 && (
-                                                            <div style={{ fontSize: 11, fontWeight: 900, color: '#ff3b30', textTransform: 'uppercase', letterSpacing: '0.02em', background: 'rgba(255,59,48,0.1)', padding: '4px 8px', borderRadius: 6 }}>
-                                                                Terminated
-                                                            </div>
-                                                        )}
-                                                    </motion.div>
-                                                ))
+                                                            
+                                                            {isCritical && (
+                                                                <div style={{ 
+                                                                    fontSize: 10, fontWeight: 900, color: 'white', background: '#ff3b30', 
+                                                                    padding: '4px 10px', borderRadius: 10, textTransform: 'uppercase', 
+                                                                    letterSpacing: '0.05em', boxShadow: '0 4px 10px rgba(255,59,48,0.3)'
+                                                                }}>
+                                                                    TERMINATED
+                                                                </div>
+                                                            )}
+                                                        </motion.div>
+                                                    );
+                                                })
                                             )}
                                         </AnimatePresence>
                                     </div>
