@@ -122,13 +122,13 @@ const QuizPage = () => {
             try {
                 setIsSaving(true);
                 await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/save`,
-                    { quizId: id, answers: answersRef.current, timeRemaining: timeLeftRef.current },
+                    { quizId: quiz?._id || quizCode, answers: answersRef.current, timeRemaining: timeLeftRef.current },
                     { headers: { Authorization: `Bearer ${user.token}` } }
                 );
-            } catch { } finally { setTimeout(() => setIsSaving(false), 600); }
+            } catch (err) { /* Silent fail for auto-save */ } finally { setTimeout(() => setIsSaving(false), 600); }
         }, 10000);
         return () => clearInterval(t);
-    }, [quizStarted, submitting, result, id, user.token]); // ✅ no timeLeft dep
+    }, [quizStarted, submitting, result, quizCode, quiz?._id, user.token]); // ✅ no timeLeft dep
 
     /* Anti-cheat */
     useEffect(() => {
@@ -371,7 +371,7 @@ const QuizPage = () => {
             </div>
 
             {/* Question Card */}
-            {curQ && (
+            {curQ ? (
                 <div key={currentQ} className="card" style={{ padding: 'clamp(22px,5vw,36px)', marginBottom: 18, animation: 'pageIn 0.28s ease both' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
                         <span className="badge badge-purple">Q {currentQ + 1} / {questions.length}</span>
@@ -411,6 +411,13 @@ const QuizPage = () => {
                             );
                         })}
                     </div>
+                </div>
+            ) : (
+                <div className="card anim-up" style={{ padding: '48px 32px', textAlign: 'center', margin: '40px 0' }}>
+                    <div style={{ fontSize: 44, marginBottom: 20 }}>📝</div>
+                    <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>No questions found</h3>
+                    <p style={{ color: 'var(--color-text-secondary)', marginBottom: 28, fontSize: 15 }}>This quiz doesn't have any questions yet. Please contact the administrator.</p>
+                    <button className="btn btn-ghost" onClick={() => navigate('/')}>Return to Dashboard</button>
                 </div>
             )}
 

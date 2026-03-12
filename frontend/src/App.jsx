@@ -224,7 +224,7 @@ const AppRoutes = () => {
           {user?.role === 'admin' ? <Navigate to="/admin" replace /> : <UserDashboard />}
         </PrivateRoute>
       } />
-      <Route path="/quiz/:quizCode" element={<PrivateRoute roles={['user']}><QuizPage /></PrivateRoute>} />
+      <Route path="/quiz/:quizCode" element={<PrivateRoute roles={['user', 'admin']}><QuizPage /></PrivateRoute>} />
       <Route path="/leaderboard" element={<PrivateRoute roles={['user','admin']}><Leaderboard /></PrivateRoute>} />
       <Route path="/my-results"  element={<PrivateRoute roles={['user']}><MyResults /></PrivateRoute>} />
       <Route path="/admin" element={<PrivateRoute roles={['admin']}><AdminDashboard /></PrivateRoute>} />

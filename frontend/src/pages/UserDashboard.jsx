@@ -26,7 +26,7 @@ const UserDashboard = () => {
         if (!joinCode.trim()) return;
         setJoining(true); setJoinError('');
         try {
-            const r = await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/verify-code`,
+            await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/verify-code`,
                 { quizCode: joinCode },
                 { headers: { Authorization: `Bearer ${user.token}` } }
             );

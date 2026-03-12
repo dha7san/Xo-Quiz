@@ -7,10 +7,14 @@ import QuizState from '../models/QuizState.js';
 
 // Helper to find actual Quiz document from either an ID or a human-readable Code
 const resolveQuiz = async (idOrCode) => {
+    if (!idOrCode) return null;
     if (mongoose.Types.ObjectId.isValid(idOrCode)) {
         return await Quiz.findById(idOrCode);
     }
-    return await Quiz.findOne({ quizCode: idOrCode.toUpperCase().trim() });
+    // Case-insensitive search for the quiz code
+    return await Quiz.findOne({ 
+        quizCode: { $regex: new RegExp(`^${idOrCode.trim()}$`, 'i') } 
+    });
 };
 
 
@@ -37,17 +41,9 @@ export const verifyQuizCode = async (req, res) => {
         const { quizCode } = req.body;
         if (!quizCode) return res.status(400).json({ message: 'Quiz code is required' });
 
-        const trimmedCode = quizCode.trim();
-        console.log('Searching for quiz code:', trimmedCode);
+        const quiz = await resolveQuiz(quizCode);
 
-        const quiz = await Quiz.findOne({ 
-            quizCode: { $regex: new RegExp(`^${trimmedCode}$`, 'i') },
-            isActive: true 
-        });
-
-        console.log('Found quiz:', quiz ? quiz.title : 'NONE');
-
-        if (!quiz) {
+        if (!quiz || !quiz.isActive) {
             return res.status(404).json({ message: 'Invalid Quiz Code or quiz is no longer active.' });
         }
 
@@ -61,17 +57,7 @@ export const verifyQuizCode = async (req, res) => {
 export const getQuizInfo = async (req, res) => {
     try {
         const { quizId } = req.body;
-        let quiz;
-
-        // Try finding by ID first, if not a valid ID, try finding by Quiz Code
-        if (mongoose.Types.ObjectId.isValid(quizId)) {
-            quiz = await Quiz.findById(quizId);
-        } else {
-            quiz = await Quiz.findOne({ 
-                quizCode: { $regex: new RegExp(`^${quizId}$`, 'i') },
-                isActive: true 
-            });
-        }
+        const quiz = await resolveQuiz(quizId);
 
         if (!quiz || !quiz.isActive) {
             return res.status(404).json({ message: 'Quiz not found or not active' });
