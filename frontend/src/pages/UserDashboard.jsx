@@ -252,27 +252,13 @@ const UserDashboard = () => {
                                         )}
                                     </div>
 
-                                    {isActive ? (
-                                        <button 
-                                            onClick={() => navigate(`/quiz/${quiz.quizCode}`)}
-                                            className="btn btn-primary btn-pill"
-                                            style={{ 
-                                                width: '100%', padding: '12px', borderRadius: 16, 
-                                                fontSize: 14, fontWeight: 700, gap: 8,
-                                                boxShadow: '0 8px 20px rgba(108,99,255,0.2)'
-                                            }}
-                                        >
-                                            Join Quiz <ArrowRight size={16} strokeWidth={3} />
-                                        </button>
-                                    ) : (
-                                        <div style={{ 
-                                            padding: '12px', borderRadius: 14, background: '#f8f9fa', 
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                                            fontSize: 14, color: '#555', fontWeight: 600, border: '1px dashed rgba(0,0,0,0.1)'
-                                        }}>
-                                            <KeyRound size={16} opacity={0.6}/> Enter code above to join
-                                        </div>
-                                    )}
+                                    <div style={{ 
+                                        padding: '12px', borderRadius: 14, background: '#f8f9fa', 
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                        fontSize: 14, color: '#555', fontWeight: 600, border: '1px dashed rgba(0,0,0,0.1)'
+                                    }}>
+                                        <KeyRound size={16} opacity={0.6}/> Enter code above to join
+                                    </div>
                                 </motion.div>
                             );
                         })}
