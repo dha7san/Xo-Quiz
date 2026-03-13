@@ -16,4 +16,7 @@ const submissionSchema = new mongoose.Schema({
     submittedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
+// Optimize leaderboard queries
+submissionSchema.index({ quizId: 1, score: -1, submittedAt: 1 });
+
 export default mongoose.model('Submission', submissionSchema);

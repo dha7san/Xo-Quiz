@@ -6,38 +6,116 @@ import User from '../models/User.js';
 import QuizState from '../models/QuizState.js';
 import { getIO } from '../socket.js';
 
-// Helper to find actual Quiz document from either an ID or a human-readable Code
+// --- Data Structures for Caching (Designed for future Redis migration) ---
+
+// 1. Quiz Metadata & Questions Cache
+/**
+ * quizCache = {
+ *   [quizId]: {
+ *     quiz: Object,
+ *     questions: Array,
+ *     duration: number
+ *   }
+ * }
+ */
+const quizCache = new Map();
+
+// 2. Active Quiz State Cache
+/**
+ * activeQuizzes = {
+ *   [quizId]: {
+ *     users: {
+ *       [userId]: {
+ *         answers: Object,
+ *         timeRemaining: number,
+ *         flagCount: number,
+ *         flagEvents: Array,
+ *         startedAt: Date,
+ *         lastSavedAt: Date
+ *       }
+ *     }
+ *   }
+ * }
+ */
+const activeQuizzes = new Map();
+
+// --- Cache Helpers ---
+
+// Resolves and caches quiz metadata and questions to prevent repeated DB reads
 const resolveQuiz = async (idOrCode) => {
     if (!idOrCode) return null;
-    console.log(`🔍 Resolving quiz for identifier: ${idOrCode}`);
     
+    const quizCodeRegexString = idOrCode.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // First check memory cache
+    for (const [quizId, cachedData] of quizCache.entries()) {
+        if (cachedData.quiz.quizCode.toLowerCase() === idOrCode.toLowerCase() || quizId.toString() === idOrCode.toString()) {
+            return cachedData.quiz;
+        }
+    }
+
+    let quiz = null;
     if (mongoose.Types.ObjectId.isValid(idOrCode)) {
-        const quiz = await Quiz.findById(idOrCode);
-        if (quiz) {
-            console.log(`✅ Quiz found by ID: ${quiz.title} (${quiz._id})`);
-            return quiz;
+        quiz = await Quiz.findById(idOrCode).lean();
+    } else {
+        quiz = await Quiz.findOne({ 
+            quizCode: { $regex: new RegExp(`^${quizCodeRegexString}$`, 'i') } 
+        }).lean();
+    }
+
+    if (quiz) {
+        // Cache this quiz heavily
+        const questions = await Question.find({ quizId: quiz._id }).lean();
+        quizCache.set(quiz._id.toString(), {
+            quiz,
+            questions,
+            duration: quiz.duration
+        });
+
+        // Initialize user state container for this quiz if it doesn't exist
+        if (!activeQuizzes.has(quiz._id.toString())) {
+            activeQuizzes.set(quiz._id.toString(), { users: new Map() });
+        }
+        
+        return quiz;
+    }
+
+    return null;
+};
+
+// Gets user state from memory or fallback briefly to database if they were mid-session from earlier version.
+const getUserState = async (quizIdStr, userIdStr) => {
+    if (!activeQuizzes.has(quizIdStr)) {
+        activeQuizzes.set(quizIdStr, { users: new Map() });
+    }
+    const quizUsers = activeQuizzes.get(quizIdStr).users;
+    
+    let userState = quizUsers.get(userIdStr);
+    
+    if (!userState) {
+        // Fallback for mid-flight restarts. Can be removed later.
+        const dbState = await QuizState.findOne({ userId: userIdStr, quizId: quizIdStr }).lean();
+        if (dbState) {
+            userState = {
+                answers: dbState.answers ? Object.fromEntries(Object.entries(dbState.answers)) : {},
+                timeRemaining: dbState.timeRemaining,
+                flagCount: dbState.flagCount || 0,
+                flagEvents: dbState.flagEvents || [],
+                startedAt: dbState.startedAt,
+                lastSavedAt: dbState.lastSavedAt
+            };
+            quizUsers.set(userIdStr, userState);
         }
     }
     
-    // Case-insensitive search for the quiz code
-    const escaped = idOrCode.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const quizByCode = await Quiz.findOne({ 
-        quizCode: { $regex: new RegExp(`^${escaped}$`, 'i') } 
-    });
-    
-    if (quizByCode) {
-        console.log(`✅ Quiz found by Code: ${quizByCode.title} (${quizByCode._id})`);
-    } else {
-        console.warn(`❌ Quiz NOT FOUND for identifier: ${idOrCode}`);
-    }
-    
-    return quizByCode;
+    return userState;
 };
 
+// --- Controller Functions ---
 
 export const getActiveQuizzes = async (req, res) => {
     try {
-        const quizzes = await Quiz.find({ isActive: true });
+        const quizzes = await Quiz.find({ isActive: true }).lean();
         res.json(quizzes);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching quizzes', error: error.message });
@@ -46,7 +124,7 @@ export const getActiveQuizzes = async (req, res) => {
 
 export const getPublishedLeaderboards = async (req, res) => {
     try {
-        const quizzes = await Quiz.find({ leaderboardPublished: true }).select('title _id');
+        const quizzes = await Quiz.find({ leaderboardPublished: true }).select('title _id').lean();
         res.json(quizzes);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching published leaderboards', error: error.message });
@@ -70,7 +148,6 @@ export const verifyQuizCode = async (req, res) => {
     }
 };
 
-// Called on page load — just fetches quiz info and checks if user is resuming
 export const getQuizInfo = async (req, res) => {
     try {
         const { quizId } = req.body;
@@ -80,27 +157,28 @@ export const getQuizInfo = async (req, res) => {
             return res.status(404).json({ message: 'Quiz not found or not active' });
         }
         
-        const actualQuizId = quiz._id;
+        const actualQuizIdStr = quiz._id.toString();
+        const userIdStr = req.user.id.toString();
 
         // Check if user already submitted
-        const existingSubmission = await Submission.findOne({ userId: req.user.id, quizId: actualQuizId });
+        const existingSubmission = await Submission.exists({ userId: req.user.id, quizId: quiz._id });
         if (existingSubmission) {
             return res.status(400).json({ message: 'You have already submitted this quiz' });
         }
 
-        // Check for existing saved state (user is resuming)
-        const savedState = await QuizState.findOne({ userId: req.user.id, quizId: actualQuizId });
+        let savedState = await getUserState(actualQuizIdStr, userIdStr);
 
         if (savedState) {
-            // Calculate remaining time based on when the attempt started
-            const attemptElapsedSeconds = Math.floor((Date.now() - savedState.startedAt.getTime()) / 1000);
+            // Calculate remaining time
+            const attemptStartedAt = new Date(savedState.startedAt).getTime();
+            const attemptElapsedSeconds = Math.floor((Date.now() - attemptStartedAt) / 1000);
             let timeRemaining = Math.max(0, (quiz.duration * 60) - attemptElapsedSeconds);
 
-            // If time has fully expired, auto-submit whatever they had
+            // Time expired
             if (timeRemaining <= 0) {
                 let score = 0;
-                const questionsList = await Question.find({ quizId: actualQuizId });
-                const answersObj = savedState.answers ? Object.fromEntries(savedState.answers.entries()) : {};
+                const questionsList = quizCache.get(actualQuizIdStr).questions;
+                const answersObj = savedState.answers || {};
 
                 const evaluatedAnswers = Object.keys(answersObj).map(qId => {
                     const question = questionsList.find(q => q._id.toString() === qId);
@@ -110,27 +188,29 @@ export const getQuizInfo = async (req, res) => {
                 });
 
                 await Submission.create({
-                    userId: req.user.id, quizId: actualQuizId,
+                    userId: req.user.id, quizId: quiz._id,
                     answers: evaluatedAnswers, score,
-                    isSuspicious: true, tabSwitches: 0, fullscreenExits: 0
+                    isSuspicious: true, tabSwitches: savedState.flagCount || 0, fullscreenExits: 0
                 });
 
-                await QuizState.findOneAndDelete({ userId: req.user.id, quizId: actualQuizId });
+                // Clear from memory
+                activeQuizzes.get(actualQuizIdStr).users.delete(userIdStr);
+                await QuizState.findOneAndDelete({ userId: req.user.id, quizId: quiz._id });
+                
                 return res.status(403).json({ message: 'Your quiz time has expired. It has been automatically submitted.' });
             }
 
-            // User is resuming — return saved answers + questions + time
-            const answersObj = savedState.answers ? Object.fromEntries(savedState.answers.entries()) : {};
-            const questions = await Question.find({ quizId: actualQuizId }).select('-correctAnswer');
-
+            // User is resuming
+            let questions = quizCache.get(actualQuizIdStr).questions.map(({ correctAnswer, ...q }) => q);
+            
             return res.json({
                 quiz, questions,
-                savedState: { answers: answersObj, timeRemaining },
+                savedState: { answers: savedState.answers, timeRemaining },
                 status: 'resuming'
             });
         }
 
-        // Fresh quiz — just return quiz info (no questions yet, no state created)
+        // Fresh quiz
         return res.json({
             quiz,
             questions: [],
@@ -143,7 +223,6 @@ export const getQuizInfo = async (req, res) => {
     }
 };
 
-// Called when user clicks "Start Quiz" — creates QuizState and returns scrambled questions
 export const startQuiz = async (req, res) => {
     try {
         const { quizId } = req.body;
@@ -152,21 +231,21 @@ export const startQuiz = async (req, res) => {
         if (!quiz || !quiz.isActive) {
             return res.status(404).json({ message: 'Quiz not found or not active' });
         }
-        const actualQuizId = quiz._id;
+        const actualQuizIdStr = quiz._id.toString();
+        const userIdStr = req.user.id.toString();
 
         // Check if user already submitted
-        const existingSubmission = await Submission.findOne({ userId: req.user.id, quizId: actualQuizId });
+        const existingSubmission = await Submission.exists({ userId: req.user.id, quizId: quiz._id });
         if (existingSubmission) {
             return res.status(400).json({ message: 'You have already submitted this quiz' });
         }
 
-        // If they already have a state, they should be resuming via getQuizInfo, not starting again
-        const existingState = await QuizState.findOne({ userId: req.user.id, quizId: actualQuizId });
-        if (existingState) {
+        // Check if already in memory cache 
+        if (await getUserState(actualQuizIdStr, userIdStr)) {
             return res.status(400).json({ message: 'Quiz already started. Please resume.' });
         }
 
-        // Check if quiz has started
+        // Check date
         if (quiz.startTime) {
             const nowMs = Date.now();
             const startTimeMs = new Date(quiz.startTime).getTime();
@@ -175,8 +254,8 @@ export const startQuiz = async (req, res) => {
             }
         }
 
-        // Fetch and scramble questions
-        let questions = await Question.find({ quizId: actualQuizId }).select('-correctAnswer');
+        // Scramble questions from cache (do not alter cache directly)
+        let questions = JSON.parse(JSON.stringify(quizCache.get(actualQuizIdStr).questions));
 
         for (let i = questions.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
@@ -184,29 +263,24 @@ export const startQuiz = async (req, res) => {
         }
 
         questions = questions.map(q => {
-            const qObj = q.toObject();
-            for (let i = qObj.options.length - 1; i > 0; i--) {
+            delete q.correctAnswer;
+            for (let i = q.options.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
-                [qObj.options[i], qObj.options[j]] = [qObj.options[j], qObj.options[i]];
+                [q.options[i], q.options[j]] = [q.options[j], q.options[i]];
             }
-            return qObj;
+            return q;
         });
 
-        // Create QuizState — timer officially starts NOW
-        try {
-            await QuizState.create({
-                userId: req.user.id, quizId: actualQuizId,
-                answers: {},
-                startedAt: Date.now(),
-                timeRemaining: quiz.duration * 60,
-                lastSavedAt: Date.now()
-            });
-        } catch (error) {
-            if (error.code === 11000) {
-                return res.status(400).json({ message: 'Quiz already started. Please resume.' });
-            }
-            throw error;
-        }
+        const now = Date.now();
+        // Insert directly into IN-MEMORY ONLY
+        activeQuizzes.get(actualQuizIdStr).users.set(userIdStr, {
+            answers: {},
+            startedAt: new Date(now),
+            timeRemaining: quiz.duration * 60,
+            lastSavedAt: new Date(now),
+            flagCount: 0,
+            flagEvents: []
+        });
 
         res.json({ quiz, questions });
     } catch (error) {
@@ -220,18 +294,30 @@ export const saveQuizState = async (req, res) => {
         const { quizId, answers, timeRemaining } = req.body;
         const quiz = await resolveQuiz(quizId);
         if (!quiz) return res.status(404).json({ message: 'Quiz not found' });
+        
+        const actualQuizIdStr = quiz._id.toString();
+        const userIdStr = req.user.id.toString();
 
-        await QuizState.findOneAndUpdate(
-            { userId: req.user.id, quizId: quiz._id },
-            { 
-                answers, 
+        // Only save to In-Memory Cache (Blazing Fast, NO DB load)
+        let userState = await getUserState(actualQuizIdStr, userIdStr);
+        if (userState) {
+            userState.answers = answers;
+            userState.timeRemaining = timeRemaining;
+            userState.lastSavedAt = new Date();
+        } else {
+            // Should not happen if they started properly, but fallback
+            userState = {
+                answers,
                 timeRemaining,
-                lastSavedAt: Date.now()
-            },
-            { upsert: true, new: true }
-        );
+                lastSavedAt: new Date(),
+                startedAt: new Date(), 
+                flagCount: 0,
+                flagEvents: []
+            };
+            activeQuizzes.get(actualQuizIdStr).users.set(userIdStr, userState);
+        }
 
-        res.json({ message: 'Quiz state saved' });
+        res.json({ message: 'Quiz state saved via Cache' });
     } catch (error) {
         res.status(500).json({ message: 'Error saving quiz state', error: error.message });
     }
@@ -242,10 +328,14 @@ export const submitQuiz = async (req, res) => {
         const { quizId, answers, isSuspicious, tabSwitches, fullscreenExits } = req.body; 
         const quiz = await resolveQuiz(quizId);
         if (!quiz) return res.status(404).json({ message: 'Quiz not found' });
-        const actualQuizId = quiz._id;
+        
+        const actualQuizIdStr = quiz._id.toString();
+        const userIdStr = req.user.id.toString();
 
-        const previousSubmissionsCount = await Submission.countDocuments({ userId: req.user.id, quizId: actualQuizId });
-        const questions = await Question.find({ quizId: actualQuizId });
+        const questions = quizCache.get(actualQuizIdStr).questions;
+        
+        // Single DB hit ONLY on submission to get past attempts map
+        const previousSubmissionsCount = await Submission.countDocuments({ userId: req.user.id, quizId: quiz._id });
 
         let score = 0;
         const evaluatedAnswers = answers.map(ans => {
@@ -260,10 +350,10 @@ export const submitQuiz = async (req, res) => {
             };
         });
 
-        // Create Submission
+        // Create Submission (The ONLY MongoDB write)
         const submission = await Submission.create({
             userId: req.user.id,
-            quizId: actualQuizId,
+            quizId: quiz._id,
             answers: evaluatedAnswers,
             score,
             isSuspicious: isSuspicious || false,
@@ -272,8 +362,11 @@ export const submitQuiz = async (req, res) => {
             attemptNumber: previousSubmissionsCount + 1
         });
 
-        // Delete any saved state the user had
-        await QuizState.findOneAndDelete({ userId: req.user.id, quizId: actualQuizId });
+        // Delete from RAM cache
+        if (activeQuizzes.has(actualQuizIdStr)) {
+            activeQuizzes.get(actualQuizIdStr).users.delete(userIdStr);
+        }
+        await QuizState.findOneAndDelete({ userId: req.user.id, quizId: quiz._id });
 
         res.status(201).json({ message: 'Quiz submitted successfully. Results will be published later.', total: questions.length, submission });
     } catch (error) {
@@ -290,29 +383,32 @@ export const getLeaderboard = async (req, res) => {
             return res.status(403).json({ message: 'Leaderboard is not published for this quiz yet.' });
         }
 
-        const submissions = await Submission.find({ quizId: quiz._id })
-            .populate('userId', 'name email role');
-
-        const publishedSubmissions = submissions.filter(s =>
-            s.userId && s.userId.role === 'user'
-        );
-
-        // Group by user and take highest score for each user
-        const bestScoresMap = {};
-        for (const sub of publishedSubmissions) {
-            const uId = sub.userId._id.toString();
-            if (!bestScoresMap[uId] || bestScoresMap[uId].score < sub.score) {
-                bestScoresMap[uId] = sub;
-            }
-        }
-
-        const leaderboard = Object.values(bestScoresMap)
-            .map(sub => ({
-                _id: sub.userId._id.toString(),
-                name: sub.userId.name,
-                score: sub.score
-            }))
-            .sort((a, b) => b.score - a.score);
+        // Optimized Leaderboard query using MongoDB Aggregation
+        const leaderboard = await Submission.aggregate([
+            { $match: { quizId: quiz._id } },
+            // Sort by score first to ensure $first takes the best score per user
+            { $sort: { score: -1, submittedAt: 1 } },
+            { $group: {
+                _id: "$userId",
+                bestScore: { $first: "$score" }
+            }},
+            // Lookup user details
+            { $lookup: {
+                from: "users",
+                localField: "_id",
+                foreignField: "_id",
+                as: "user"
+            }},
+            { $unwind: "$user" },
+            { $match: { "user.role": "user" } },
+            { $project: {
+                _id: 1,
+                name: "$user.name",
+                score: "$bestScore"
+            }},
+            { $sort: { score: -1 } },
+            { $limit: 10 }
+        ]);
 
         res.json(leaderboard);
     } catch (error) {
@@ -323,65 +419,53 @@ export const getLeaderboard = async (req, res) => {
 export const getMyResults = async (req, res) => {
     try {
         const submissions = await Submission.find({ userId: req.user.id })
-            .populate('quizId', 'title resultsPublished');
+            .populate('quizId', 'title resultsPublished').lean();
 
         const publishedSubmissions = submissions.filter(s => s.quizId && s.quizId.resultsPublished);
 
-        // Fetch question counts for each unique quizId in published submissions
-        const quizIds = [...new Set(publishedSubmissions.map(s => s.quizId._id))];
-        const questionCounts = await Promise.all(quizIds.map(async (qId) => {
-            const count = await Question.countDocuments({ quizId: qId });
-            return { [qId]: count };
-        }));
+        // Fetch question counts using the cache
+        for (let sub of publishedSubmissions) {
+            const actualQuizIdStr = sub.quizId._id.toString();
+            // Load into cache if not present (to get question counts)
+            await resolveQuiz(actualQuizIdStr);
+            const cacheHit = quizCache.get(actualQuizIdStr);
+            sub.totalQuestions = cacheHit ? cacheHit.questions.length : 0;
+        }
 
-        const countsMap = Object.assign({}, ...questionCounts);
-
-        const resultsWithCounts = publishedSubmissions.map(sub => {
-            const subObj = sub.toObject();
-            return {
-                ...subObj,
-                totalQuestions: countsMap[sub.quizId._id] || 0
-            };
-        });
-
-        res.json(resultsWithCounts);
+        res.json(publishedSubmissions);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching your results', error: error.message });
     }
 };
 
-// Real-time flag reporting — called from frontend on each suspicious activity
 export const reportFlag = async (req, res) => {
     try {
         const { quizId, flagType } = req.body;
-        const userId = req.user.id;
+        const userIdStr = req.user.id.toString();
         
         const quiz = await resolveQuiz(quizId);
         if (!quiz) return res.status(404).json({ message: 'Quiz not found' });
-        const actualQuizId = quiz._id;
+        const actualQuizIdStr = quiz._id.toString();
 
         const validTypes = ['tab_switch', 'fullscreen_exit', 'page_blur', 'refresh'];
         if (!validTypes.includes(flagType)) {
             return res.status(400).json({ message: 'Invalid flag type' });
         }
 
-        const quizState = await QuizState.findOneAndUpdate(
-            { userId, quizId: actualQuizId },
-            {
-                $inc: { flagCount: 1 },
-                $push: { flagEvents: { type: flagType, timestamp: new Date() } }
-            },
-            { new: true }
-        );
+        let userState = await getUserState(actualQuizIdStr, userIdStr);
 
-        if (!quizState) {
+        if (!userState) {
             return res.status(404).json({ message: 'Quiz state not found' });
         }
 
-        // Get user details for the real-time broadcast
+        userState.flagCount = (userState.flagCount || 0) + 1;
+        if (!userState.flagEvents) userState.flagEvents = [];
+        userState.flagEvents.push({ type: flagType, timestamp: new Date() });
+
+        // Get user details for the real-time broadcast (DB read ONLY for Admin, others hit cache optionally or just run DB once)
         let user = null;
-        if (userId !== 'admin-id') {
-            user = await User.findById(userId).select('name email');
+        if (userIdStr !== 'admin-id') {
+            user = await User.findById(req.user.id).select('name email').lean();
         } else {
             user = { name: 'System Admin', email: 'dharsan@admin.com' };
         }
@@ -389,25 +473,23 @@ export const reportFlag = async (req, res) => {
         // Emit real-time flag event to admin via Socket.IO
         const io = getIO();
         if (io) {
-            const roomName = `admin:${actualQuizId.toString()}`;
+            const roomName = `admin:${actualQuizIdStr}`;
             const roomSize = io.sockets.adapter.rooms.get(roomName)?.size || 0;
             console.log(`📡 BROADCASTING Flag Update: [Room: ${roomName}] [Viewers: ${roomSize}] [User: ${user?.name}] [Flag: ${flagType}]`);
             
             io.to(roomName).emit('flag:update', {
-                userId: userId.toString(),
+                userId: userIdStr,
                 userName: user?.name || 'Unknown',
                 userEmail: user?.email || '',
-                quizId: actualQuizId.toString(),
+                quizId: actualQuizIdStr,
                 flagType,
-                flagCount: quizState.flagCount,
-                flagEvents: quizState.flagEvents,
+                flagCount: userState.flagCount,
+                flagEvents: userState.flagEvents,
                 timestamp: new Date()
             });
-        } else {
-            console.warn('⚠️ Cannot broadcast flag: Socket.IO (io) instance NOT EXPORTED correctly');
         }
 
-        res.json({ flagCount: quizState.flagCount });
+        res.json({ flagCount: userState.flagCount });
     } catch (error) {
         res.status(500).json({ message: 'Error reporting flag', error: error.message });
     }
