@@ -313,7 +313,12 @@ const AdminDashboard = () => {
         setCorrectAnswer(q.correctAnswer);
         setQuestionImage(q.image || '');
         setImagePreview(q.image || '');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        // Scroll the form panel to the top so the admin sees the loaded question, rather than scrolling the main window to the top.
+        const addEditPanel = document.getElementById('add-edit-form-panel');
+        if (addEditPanel) {
+            addEditPanel.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     const handleDeleteQuestion = async (qId) => {
@@ -735,9 +740,9 @@ const AdminDashboard = () => {
 
             {/* ── QUESTIONS TAB ── */}
             {activeTab === 'questions' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 420px', gap: 24, alignItems: 'start' }} className="responsive-grid">
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 420px', gap: 24, alignItems: 'stretch', height: 'calc(100vh - 160px)' }} className="responsive-grid">
                     {/* Left Panel: Question List */}
-                    <div style={{ ...neu.card, padding: '24px' }}>
+                    <div style={{ ...neu.card, padding: '24px', height: '100%', overflowY: 'auto' }} className="custom-scrollbar">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                             <div>
                                 <h3 style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-text-primary)' }}>Questions Directory</h3>
@@ -759,36 +764,40 @@ const AdminDashboard = () => {
                                 No questions found for this quiz. Add one using the panel.
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                                 {questionsList.map((q, idx) => (
-                                    <div key={q._id} style={{ ...neu.inset, padding: '16px', display: 'flex', gap: 16, background: editingQuestionId === q._id ? 'rgba(108,99,255,0.03)' : 'var(--neu-bg)', border: editingQuestionId === q._id ? '1px solid rgba(108,99,255,0.2)' : 'border: 1px solid transparent' }}>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                                                <div style={{ fontWeight: 700, fontSize: 14, color: '#111', lineHeight: 1.4 }}>
-                                                    <span style={{ color: 'var(--brand-accent)', marginRight: 6 }}>{idx + 1}.</span> {q.question}
+                                    <div key={q._id} style={{ ...neu.inset, padding: '20px', display: 'flex', gap: 16, background: editingQuestionId === q._id ? 'rgba(108,99,255,0.03)' : 'var(--neu-bg)', border: editingQuestionId === q._id ? '1px solid rgba(108,99,255,0.2)' : '1px solid transparent', borderRadius: '16px' }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 16 }}>
+                                                <div style={{ fontWeight: 700, fontSize: 15, color: '#111', lineHeight: 1.5, display: 'flex', gap: 10 }}>
+                                                    <span style={{ color: 'var(--brand-accent)', flexShrink: 0 }}>{idx + 1}.</span> 
+                                                    <span style={{ wordBreak: 'break-word' }}>{q.question}</span>
                                                 </div>
-                                                <div style={{ display: 'flex', gap: 6 }}>
-                                                    <button onClick={() => handleEditQuestionClick(q)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#007aff', fontSize: 13, fontWeight: 600 }}>Edit</button>
-                                                    <button onClick={() => handleDeleteQuestion(q._id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#cc000a', fontSize: 13, fontWeight: 600 }}>Delete</button>
+                                                <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                                                    <button onClick={() => handleEditQuestionClick(q)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#007aff', fontSize: 13, fontWeight: 700 }}>Edit</button>
+                                                    <button onClick={() => handleDeleteQuestion(q._id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#cc000a', fontSize: 13, fontWeight: 700 }}>Delete</button>
                                                 </div>
                                             </div>
                                             {q.image && (
                                                 <div style={{ marginBottom: 16 }}>
-                                                    <img src={q.image} alt="Question" style={{ maxHeight: 100, borderRadius: 8, border: '1px solid rgba(0,0,0,0.05)' }} />
+                                                    <img src={q.image} alt="Question" style={{ maxHeight: 120, borderRadius: 10, border: '1px solid rgba(0,0,0,0.05)', objectFit: 'contain' }} />
                                                 </div>
                                             )}
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                                 {q.options.map((opt, i) => {
                                                     const isCorrect = opt === q.correctAnswer;
                                                     return (
                                                         <div key={i} style={{ 
-                                                            fontSize: 12, padding: '6px 10px', borderRadius: 6,
+                                                            fontSize: 13, padding: '10px 14px', borderRadius: 8,
                                                             background: isCorrect ? 'rgba(48,209,88,0.1)' : 'var(--neu-bg)',
                                                             color: isCorrect ? '#1a7a3a' : '#555',
-                                                            border: isCorrect ? '1px solid rgba(48,209,88,0.3)' : '1px solid transparent',
-                                                            fontWeight: isCorrect ? 700 : 500
+                                                            border: isCorrect ? '1px solid rgba(48,209,88,0.3)' : '1px solid rgba(0,0,0,0.03)',
+                                                            fontWeight: isCorrect ? 700 : 500,
+                                                            display: 'flex', alignItems: 'flex-start', gap: 10,
+                                                            lineHeight: 1.4
                                                         }}>
-                                                            {['A','B','C','D'][i]}. {opt}
+                                                            <span style={{ fontWeight: 800, color: isCorrect ? '#1a7a3a' : '#8090a0', flexShrink: 0 }}>{['A','B','C','D'][i]}.</span>
+                                                            <span style={{ flex: 1, wordBreak: 'break-word' }}>{opt}</span>
                                                         </div>
                                                     )
                                                 })}
@@ -801,7 +810,7 @@ const AdminDashboard = () => {
                     </div>
 
                     {/* Right Panel: Add/Edit Form */}
-                    <div style={{ ...neu.card, padding: '24px', position: 'sticky', top: 24 }}>
+                    <div id="add-edit-form-panel" style={{ ...neu.card, padding: '24px', height: '100%', overflowY: 'auto' }} className="custom-scrollbar">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                             <h3 style={{ fontWeight: 700, fontSize: 16, color: editingQuestionId ? '#007aff' : 'inherit' }}>
                                 {editingQuestionId ? '✎ Edit Question' : '＋ Add Question'}
