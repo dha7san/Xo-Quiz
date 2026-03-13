@@ -1,11 +1,14 @@
 import express from 'express';
-import { createQuiz, addQuestion, getResults, getUsers, toggleResults, toggleLeaderboard, stopQuiz, deleteQuiz, blockUser, unblockUser, getLiveAttendees, getAllQuizzes, toggleRegistration, getAppSettings } from '../controllers/adminController.js';
+import { createQuiz, addQuestion, getQuestions, updateQuestion, deleteQuestion, getResults, getUsers, toggleResults, toggleLeaderboard, stopQuiz, deleteQuiz, blockUser, unblockUser, getLiveAttendees, getAllQuizzes, toggleRegistration, getAppSettings } from '../controllers/adminController.js';
 import { protect, admin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 router.post('/create-quiz', protect, admin, createQuiz);
 router.post('/add-question', protect, admin, addQuestion);
+router.get('/questions/:quizId', protect, admin, getQuestions);
+router.put('/question/:questionId', protect, admin, updateQuestion);
+router.delete('/question/:questionId', protect, admin, deleteQuestion);
 router.get('/all-quizzes', protect, admin, getAllQuizzes);
 router.get('/results', protect, admin, getResults);
 router.get('/users', protect, admin, getUsers);

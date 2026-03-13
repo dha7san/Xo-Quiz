@@ -18,6 +18,7 @@ export const initSocket = (httpServer) => {
             if (!quizId) return;
             const roomName = `admin:${quizId.toString()}`;
             socket.join(roomName);
+            socket.activeAdminRoom = roomName;
             console.log(`👤 Admin joined room: ${roomName} (Socket: ${socket.id})`);
             socket.emit('admin:confirmed', { room: roomName });
         });
@@ -26,6 +27,7 @@ export const initSocket = (httpServer) => {
             if (!quizId) return;
             const roomName = `admin:${quizId.toString()}`;
             socket.leave(roomName);
+            if (socket.activeAdminRoom === roomName) delete socket.activeAdminRoom;
             console.log(`👤 Admin left room: ${roomName}`);
         });
 
@@ -56,6 +58,16 @@ export const initSocket = (httpServer) => {
         });
 
         socket.on("disconnect", (reason) => {
+            if (socket.activeQuizRoom) {
+                socket.leave(socket.activeQuizRoom);
+                console.log(`🧹 Cleaned up stale participant socket from ${socket.activeQuizRoom}`);
+                delete socket.activeQuizRoom;
+            }
+            if (socket.activeAdminRoom) {
+                socket.leave(socket.activeAdminRoom);
+                console.log(`🧹 Cleaned up stale admin socket from ${socket.activeAdminRoom}`);
+                delete socket.activeAdminRoom;
+            }
             console.log(`🔌 Socket disconnected: ${socket.id} (Reason: ${reason})`);
         });
     });

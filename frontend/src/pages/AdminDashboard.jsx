@@ -97,6 +97,8 @@ const AdminDashboard = () => {
     const [startTime, setStartTime] = useState(toLocalInputValue(new Date()));
 
     const [selectedQuizId, setSelectedQuizId] = useState('');
+    const [questionsList, setQuestionsList] = useState([]);
+    const [editingQuestionId, setEditingQuestionId] = useState(null);
     const [question, setQuestion] = useState('');
     const [options, setOptions] = useState(['', '', '', '']);
     const [correctAnswer, setCorrectAnswer] = useState('');
@@ -113,6 +115,15 @@ const AdminDashboard = () => {
         if (activeTab === 'results') fetchResults();
         if (activeTab === 'users') fetchUsers();
     }, [activeTab]);
+
+    useEffect(() => {
+        if (selectedQuizId) {
+            fetchQuestions(selectedQuizId);
+            handleCancelEdit(); // Reset form when switching quizzes
+        } else {
+            setQuestionsList([]);
+        }
+    }, [selectedQuizId]);
  
     useEffect(() => {
         if (!selectedQuizForAttendees) {
@@ -280,10 +291,60 @@ const AdminDashboard = () => {
         const startTimeUTC = new Date(startTime).toISOString();
         await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/create-quiz`, { title, quizCode, duration, startTime: startTimeUTC }, { headers: { Authorization: `Bearer ${user.token}` } }).catch(e => { alert(e.response?.data?.message || 'Error'); return null; }).then(res => { if (res) { setTitle(''); setQuizCode(''); setDuration(30); setStartTime(toLocalInputValue(new Date())); fetchQuizzes(); } });
     };
-    const handleAddQuestion = async (e) => {
+    const fetchQuestions = async (quizId) => {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL}/api/admin/questions/${quizId}`, { headers: { Authorization: `Bearer ${user.token}` } }).catch(console.error);
+        if (res) setQuestionsList(res.data);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingQuestionId(null);
+        setQuestion('');
+        setOptions(['', '', '', '']);
+        setCorrectAnswer('');
+        setQuestionImage('');
+        setImagePreview('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    const handleEditQuestionClick = (q) => {
+        setEditingQuestionId(q._id);
+        setQuestion(q.question);
+        setOptions(q.options || ['', '', '', '']);
+        setCorrectAnswer(q.correctAnswer);
+        setQuestionImage(q.image || '');
+        setImagePreview(q.image || '');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleDeleteQuestion = async (qId) => {
+        if (!window.confirm('Are you sure you want to delete this question?')) return;
+        await axios.delete(`${import.meta.env.VITE_API_URL}/api/admin/question/${qId}`, { headers: { Authorization: `Bearer ${user.token}` } })
+            .catch(e => alert(e.response?.data?.message || 'Error deleting question'));
+        fetchQuestions(selectedQuizId);
+    };
+
+    const handleAddOrEditQuestion = async (e) => {
         e.preventDefault();
-        if (!options.includes(correctAnswer)) return alert('Correct answer must exactly match one of the options.');
-        await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/add-question`, { quizId: selectedQuizId, question, options, correctAnswer, image: questionImage }, { headers: { Authorization: `Bearer ${user.token}` } }).catch(e => { alert(e.response?.data?.message || 'Error'); return null; }).then(res => { if (res) { setQuestion(''); setOptions(['', '', '', '']); setCorrectAnswer(''); setQuestionImage(''); setImagePreview(''); if (fileInputRef.current) fileInputRef.current.value = ''; } });
+        if (!options.includes(correctAnswer)) return alert('Please highlight a correct answer by clicking an option letter.');
+        
+        try {
+            if (editingQuestionId) {
+                // Edit
+                await axios.put(`${import.meta.env.VITE_API_URL}/api/admin/question/${editingQuestionId}`, 
+                    { question, options, correctAnswer, image: questionImage }, 
+                    { headers: { Authorization: `Bearer ${user.token}` } });
+            } else {
+                // Add
+                await axios.post(`${import.meta.env.VITE_API_URL}/api/admin/add-question`, 
+                    { quizId: selectedQuizId, question, options, correctAnswer, image: questionImage }, 
+                    { headers: { Authorization: `Bearer ${user.token}` } });
+            }
+            
+            fetchQuestions(selectedQuizId);
+            handleCancelEdit(); // Clears form
+        } catch (e) {
+            alert(e.response?.data?.message || 'Error saving question');
+        }
     };
     const handleImageChange = (e) => {
         const file = e.target.files[0];
@@ -674,85 +735,171 @@ const AdminDashboard = () => {
 
             {/* ── QUESTIONS TAB ── */}
             {activeTab === 'questions' && (
-                <div style={{ ...neu.card, padding: '32px', maxWidth: 640 }}>
-                    <h3 style={{ fontWeight: 700, fontSize: 16, marginBottom: 24 }}>Add Question to Quiz</h3>
-                    {quizzes.length === 0 ? (
-                        <p style={{ color: 'var(--color-danger)' }}>Please create a quiz first.</p>
-                    ) : (
-                        <form onSubmit={handleAddQuestion} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 420px', gap: 24, alignItems: 'start' }} className="responsive-grid">
+                    {/* Left Panel: Question List */}
+                    <div style={{ ...neu.card, padding: '24px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                             <div>
-                                <label style={labelStyle}>Select Quiz</label>
-                                <select
-                                    value={selectedQuizId}
-                                    onChange={e => setSelectedQuizId(e.target.value)}
-                                    style={{
-                                        width: '100%', padding: '12px 16px',
-                                        background: 'var(--neu-bg)', border: 'none', borderRadius: 'var(--radius-md)',
-                                        boxShadow: 'inset 4px 4px 10px rgba(163,177,198,0.6), inset -4px -4px 10px rgba(255,255,255,0.85)',
-                                        fontSize: 14, fontFamily: 'inherit', color: 'var(--color-text-primary)', outline: 'none'
-                                    }}
-                                >
-                                    {quizzes.map(q => <option key={q._id} value={q._id}>{q.title}</option>)}
-                                </select>
+                                <h3 style={{ fontWeight: 700, fontSize: 16, color: 'var(--color-text-primary)' }}>Questions Directory</h3>
+                                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                                    {selectedQuizId ? `Viewing questions for selected quiz` : 'Select a quiz to view questions'}
+                                </p>
                             </div>
-                            <NeuInput label="Question Text" type="text" required value={question} onChange={e => setQuestion(e.target.value)} placeholder="Enter the question" />
-                            <div>
-                                <label style={labelStyle}>Question Image (optional)</label>
-                                <input
-                                    ref={fileInputRef}
-                                    type="file" accept="image/*" onChange={handleImageChange}
-                                    style={{
-                                        width: '100%', padding: '10px 14px',
-                                        background: 'var(--neu-bg)', border: 'none', borderRadius: 'var(--radius-md)',
-                                        boxShadow: 'inset 4px 4px 10px rgba(163,177,198,0.6), inset -4px -4px 10px rgba(255,255,255,0.85)',
-                                        fontSize: 13, fontFamily: 'inherit', color: 'var(--color-text-primary)', cursor: 'pointer'
-                                    }}
-                                />
-                                {imagePreview && (
-                                    <div style={{ marginTop: 12, position: 'relative', display: 'inline-block' }}>
-                                        <img src={imagePreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 12, border: '2px solid rgba(108,99,255,0.2)' }} />
-                                        <button type="button" onClick={() => { setQuestionImage(''); setImagePreview(''); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{
-                                            position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: '50%',
-                                            background: '#ff3b30', color: 'white', border: 'none', cursor: 'pointer',
-                                            fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            boxShadow: '0 2px 8px rgba(255,59,48,0.4)'
-                                        }}>×</button>
-                                    </div>
-                                )}
+                            <span style={{ fontSize: 12, fontWeight: 700, background: 'var(--neu-bg)', padding: '4px 10px', borderRadius: 20, color: 'var(--brand-accent)' }}>
+                                {questionsList.length} Items
+                            </span>
+                        </div>
+                        
+                        {!selectedQuizId ? (
+                            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#8090a0', fontSize: 13 }}>
+                                Please select a quiz on the right to manage its questions.
                             </div>
-                            <div>
-                                <label style={labelStyle}>Options</label>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                    {options.map((opt, i) => (
-                                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                            <span style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--neu-bg)', boxShadow: '3px 3px 6px rgba(163,177,198,0.6), -3px -3px 6px rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#8090a0', flexShrink: 0 }}>
-                                                {['A','B','C','D'][i]}
-                                            </span>
-                                            <input
-                                                type="text" required value={opt}
-                                                onChange={e => { const n = [...options]; n[i] = e.target.value; setOptions(n); }}
-                                                placeholder={`Option ${['A','B','C','D'][i]}`}
-                                                style={{ flex: 1, padding: '10px 14px', background: 'var(--neu-bg)', border: 'none', borderRadius: 'var(--radius-sm)', boxShadow: 'inset 3px 3px 8px rgba(163,177,198,0.5), inset -3px -3px 8px rgba(255,255,255,0.8)', fontSize: 14, fontFamily: 'inherit', outline: 'none', color: 'var(--color-text-primary)' }}
-                                            />
+                        ) : questionsList.length === 0 ? (
+                            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#8090a0', fontSize: 13 }}>
+                                No questions found for this quiz. Add one using the panel.
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                                {questionsList.map((q, idx) => (
+                                    <div key={q._id} style={{ ...neu.inset, padding: '16px', display: 'flex', gap: 16, background: editingQuestionId === q._id ? 'rgba(108,99,255,0.03)' : 'var(--neu-bg)', border: editingQuestionId === q._id ? '1px solid rgba(108,99,255,0.2)' : 'border: 1px solid transparent' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                                                <div style={{ fontWeight: 700, fontSize: 14, color: '#111', lineHeight: 1.4 }}>
+                                                    <span style={{ color: 'var(--brand-accent)', marginRight: 6 }}>{idx + 1}.</span> {q.question}
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 6 }}>
+                                                    <button onClick={() => handleEditQuestionClick(q)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#007aff', fontSize: 13, fontWeight: 600 }}>Edit</button>
+                                                    <button onClick={() => handleDeleteQuestion(q._id)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#cc000a', fontSize: 13, fontWeight: 600 }}>Delete</button>
+                                                </div>
+                                            </div>
+                                            {q.image && (
+                                                <div style={{ marginBottom: 16 }}>
+                                                    <img src={q.image} alt="Question" style={{ maxHeight: 100, borderRadius: 8, border: '1px solid rgba(0,0,0,0.05)' }} />
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                                {q.options.map((opt, i) => {
+                                                    const isCorrect = opt === q.correctAnswer;
+                                                    return (
+                                                        <div key={i} style={{ 
+                                                            fontSize: 12, padding: '6px 10px', borderRadius: 6,
+                                                            background: isCorrect ? 'rgba(48,209,88,0.1)' : 'var(--neu-bg)',
+                                                            color: isCorrect ? '#1a7a3a' : '#555',
+                                                            border: isCorrect ? '1px solid rgba(48,209,88,0.3)' : '1px solid transparent',
+                                                            fontWeight: isCorrect ? 700 : 500
+                                                        }}>
+                                                            {['A','B','C','D'][i]}. {opt}
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
                                         </div>
-                                    ))}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Panel: Add/Edit Form */}
+                    <div style={{ ...neu.card, padding: '24px', position: 'sticky', top: 24 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h3 style={{ fontWeight: 700, fontSize: 16, color: editingQuestionId ? '#007aff' : 'inherit' }}>
+                                {editingQuestionId ? '✎ Edit Question' : '＋ Add Question'}
+                            </h3>
+                            {editingQuestionId && (
+                                <button onClick={handleCancelEdit} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#8090a0', fontSize: 12, fontWeight: 700 }}>✕ Cancel</button>
+                            )}
+                        </div>
+
+                        {quizzes.length === 0 ? (
+                            <p style={{ color: 'var(--color-danger)' }}>Please create a quiz first.</p>
+                        ) : (
+                            <form onSubmit={handleAddOrEditQuestion} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                                <div>
+                                    <label style={labelStyle}>Target Quiz</label>
+                                    <select
+                                        value={selectedQuizId}
+                                        onChange={e => setSelectedQuizId(e.target.value)}
+                                        style={{
+                                            width: '100%', padding: '12px 16px',
+                                            background: 'var(--neu-bg)', border: 'none', borderRadius: 'var(--radius-md)',
+                                            boxShadow: 'inset 4px 4px 10px rgba(163,177,198,0.6), inset -4px -4px 10px rgba(255,255,255,0.85)',
+                                            fontSize: 14, fontFamily: 'inherit', color: 'var(--color-text-primary)', outline: 'none'
+                                        }}
+                                    >
+                                        <option value="" disabled>Select a quiz...</option>
+                                        {quizzes.map(q => <option key={q._id} value={q._id}>{q.title}</option>)}
+                                    </select>
                                 </div>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Correct Answer (must match one option exactly)</label>
-                                <select
-                                    value={correctAnswer}
-                                    onChange={e => setCorrectAnswer(e.target.value)}
-                                    required
-                                    style={{ width: '100%', padding: '12px 16px', background: 'var(--neu-bg)', border: 'none', borderRadius: 'var(--radius-md)', boxShadow: 'inset 4px 4px 10px rgba(163,177,198,0.6), inset -4px -4px 10px rgba(255,255,255,0.85)', fontSize: 14, fontFamily: 'inherit', color: 'var(--color-text-primary)', outline: 'none' }}
-                                >
-                                    <option value="">-- Select correct answer --</option>
-                                    {options.filter(o => o.trim()).map((o, i) => <option key={i} value={o}>{o}</option>)}
-                                </select>
-                            </div>
-                            <NeuButton type="submit" variant="success" style={{ marginTop: 4 }}>✓ Add Question</NeuButton>
-                        </form>
-                    )}
+                                <NeuInput label="Question Text" type="text" required value={question} onChange={e => setQuestion(e.target.value)} placeholder="Enter the question" />
+                                <div>
+                                    <label style={labelStyle}>Question Image (optional)</label>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file" accept="image/*" onChange={handleImageChange}
+                                        style={{
+                                            width: '100%', padding: '10px 14px',
+                                            background: 'var(--neu-bg)', border: 'none', borderRadius: 'var(--radius-md)',
+                                            boxShadow: 'inset 4px 4px 10px rgba(163,177,198,0.6), inset -4px -4px 10px rgba(255,255,255,0.85)',
+                                            fontSize: 13, fontFamily: 'inherit', color: 'var(--color-text-primary)', cursor: 'pointer'
+                                        }}
+                                    />
+                                    {imagePreview && (
+                                        <div style={{ marginTop: 12, position: 'relative', display: 'inline-block' }}>
+                                            <img src={imagePreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 12, border: '2px solid rgba(108,99,255,0.2)' }} />
+                                            <button type="button" onClick={() => { setQuestionImage(''); setImagePreview(''); if (fileInputRef.current) fileInputRef.current.value = ''; }} style={{
+                                                position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: '50%',
+                                                background: '#ff3b30', color: 'white', border: 'none', cursor: 'pointer',
+                                                fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                boxShadow: '0 2px 8px rgba(255,59,48,0.4)'
+                                            }}>×</button>
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <label style={labelStyle}>Options <span style={{ fontSize: 10, color: '#8090a0', fontWeight: 'normal', textTransform: 'none' }}>(Click letter to mark as correct)</span></label>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                        {options.map((opt, i) => {
+                                            const isCorrect = correctAnswer && correctAnswer === opt && opt.trim() !== '';
+                                            return (
+                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => opt.trim() && setCorrectAnswer(opt)}
+                                                    title="Set as correct answer"
+                                                    style={{ 
+                                                        width: 32, height: 32, borderRadius: 8, border: !!correctAnswer && !isCorrect ? '1px solid rgba(255,59,48,0.2)' : 'none', cursor: 'pointer',
+                                                        background: isCorrect ? '#30d158' : 'var(--neu-bg)', 
+                                                        boxShadow: isCorrect ? '0 4px 10px rgba(48,209,88,0.3)' : '3px 3px 6px rgba(163,177,198,0.6), -3px -3px 6px rgba(255,255,255,0.8)', 
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, 
+                                                        color: isCorrect ? 'white' : '#8090a0', flexShrink: 0,
+                                                        transition: 'all 0.2s ease'
+                                                    }}>
+                                                    {['A','B','C','D'][i]}
+                                                </button>
+                                                <input
+                                                    type="text" required value={opt}
+                                                    onChange={e => { 
+                                                        const newOpt = e.target.value;
+                                                        const oldOpt = options[i];
+                                                        const n = [...options]; 
+                                                        n[i] = newOpt; 
+                                                        setOptions(n); 
+                                                        if (correctAnswer === oldOpt && oldOpt !== '') setCorrectAnswer(newOpt);
+                                                    }}
+                                                    placeholder={`Option ${['A','B','C','D'][i]}`}
+                                                    style={{ flex: 1, padding: '10px 14px', background: 'var(--neu-bg)', border: isCorrect ? '1px solid rgba(48,209,88,0.4)' : '1px solid transparent', borderRadius: 'var(--radius-sm)', boxShadow: 'inset 3px 3px 8px rgba(163,177,198,0.5), inset -3px -3px 8px rgba(255,255,255,0.8)', fontSize: 14, fontFamily: 'inherit', outline: 'none', color: isCorrect ? '#1a7a3a' : 'var(--color-text-primary)' }}
+                                                />
+                                            </div>
+                                        )})}
+                                    </div>
+                                </div>
+                                <NeuButton type="submit" variant={editingQuestionId ? 'primary' : 'success'} style={{ marginTop: 4 }}>
+                                    {editingQuestionId ? '✓ Save Changes' : '＋ Add Question'}
+                                </NeuButton>
+                            </form>
+                        )}
+                    </div>
                 </div>
             )}
 

@@ -52,6 +52,48 @@ export const addQuestion = async (req, res) => {
     }
 };
 
+export const getQuestions = async (req, res) => {
+    try {
+        const { quizId } = req.params;
+        const questions = await Question.find({ quizId });
+        res.json(questions);
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching questions', error: error.message });
+    }
+};
+
+export const updateQuestion = async (req, res) => {
+    try {
+        const { questionId } = req.params;
+        const { question, options, correctAnswer, image } = req.body;
+        
+        const updatedQuestion = await Question.findByIdAndUpdate(
+            questionId,
+            { question, options, correctAnswer, image },
+            { new: true, runValidators: true }
+        );
+        
+        if (!updatedQuestion) return res.status(404).json({ message: 'Question not found' });
+        
+        res.json(updatedQuestion);
+    } catch (error) {
+        res.status(500).json({ message: 'Error updating question', error: error.message });
+    }
+};
+
+export const deleteQuestion = async (req, res) => {
+    try {
+        const { questionId } = req.params;
+        const deletedQuestion = await Question.findByIdAndDelete(questionId);
+        
+        if (!deletedQuestion) return res.status(404).json({ message: 'Question not found' });
+        
+        res.json({ message: 'Question deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting question', error: error.message });
+    }
+};
+
 // Get ALL quizzes (for admin - includes stopped quizzes)
 export const getAllQuizzes = async (req, res) => {
     try {
