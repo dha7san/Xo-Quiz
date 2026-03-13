@@ -49,6 +49,7 @@ const QuizPage = () => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
     const [currentQ, setCurrentQ] = useState(0);
+    const [isStarting, setIsStarting] = useState(false);
 
     const flagCountRef  = useRef(0);
     const quizStartedRef = useRef(false);
@@ -174,10 +175,12 @@ const QuizPage = () => {
 
     const enterFullscreen = async () => {
         try { await document.documentElement.requestFullscreen(); setIsFullscreen(true); setWarningMsg(''); }
-        catch { alert('Please allow fullscreen to continue.'); }
+        catch { showWarning('Please allow fullscreen to continue.'); }
     };
 
     const handleStartQuiz = async () => {
+        if (isStarting) return;
+        setIsStarting(true);
         try {
             await document.documentElement.requestFullscreen();
             setIsFullscreen(true);
@@ -190,8 +193,16 @@ const QuizPage = () => {
                 setQuizStarted(true);
             }
         } catch (err) {
-            if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-            alert(err.response?.data?.message || 'Fullscreen required. Please try again.');
+            const errMsg = err.response?.data?.message || err.message;
+            if (errMsg === 'Quiz already started. Please resume.') {
+                // Cleanly swallow race conditions or mismatched frontend states by forcing a reload
+                window.location.reload();
+                return;
+            }
+            if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+            showWarning(errMsg || 'Fullscreen required. Please try again.');
+        } finally {
+            setIsStarting(false);
         }
     };
 
@@ -290,8 +301,8 @@ const QuizPage = () => {
                         <li>Answers auto-save every 10 seconds</li>
                     </ul>
                 </div>
-                <button className="btn btn-primary btn-full" style={{ padding: 15, fontSize: 16 }} onClick={handleStartQuiz}>
-                    🖥 Enter Fullscreen & {isResuming ? 'Resume' : 'Start'} Quiz
+                <button className="btn btn-primary btn-full" style={{ padding: 15, fontSize: 16 }} onClick={handleStartQuiz} disabled={isStarting}>
+                    {isStarting ? 'Starting...' : `🖥 Enter Fullscreen & ${isResuming ? 'Resume' : 'Start'} Quiz`}
                 </button>
             </div>
         </div>
