@@ -41,7 +41,7 @@ const UserDashboard = () => {
         const d = new Date(t), now = new Date(), diff = d - now;
         if (diff < 0) return { text: 'Started', color: 'var(--color-success)', active: true };
         if (diff < 10 * 60000) return { text: `Starts in ${Math.ceil(diff / 60000)}m`, color: 'var(--color-warning)', active: false };
-        return { text: d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }), color: 'var(--color-text-secondary)', active: false };
+        return { text: d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: true }), color: 'var(--color-text-secondary)', active: false };
     };
 
     const hour = new Date().getHours();
