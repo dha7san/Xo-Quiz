@@ -4,6 +4,19 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import helmet from "helmet";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
+
+// Global Error Protection
+process.on("uncaughtException", (err) => {
+    console.error("🔥 Uncaught Exception:", err);
+    process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("🔥 Unhandled Rejection at:", promise, "reason:", reason);
+});
 
 import { initSocket } from "./socket.js";
 
@@ -27,6 +40,21 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
 }));
+
+// Security Middleware
+app.use(helmet());
+app.use(compression());
+
+// Request Rate Limiting
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 150, // Limit each IP to 150 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many requests from this IP, please try again after 15 minutes" }
+});
+app.use('/api', apiLimiter);
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 

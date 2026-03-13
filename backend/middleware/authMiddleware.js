@@ -6,6 +6,12 @@ export const protect = async (req, res, next) => {
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         try {
             token = req.headers.authorization.split(' ')[1];
+            
+            if (!token) {
+                console.warn(`⚠️ [Auth] Malformed Header - Missing actual token (User-Agent: ${req.headers['user-agent']})`);
+                return res.status(401).json({ message: 'Not authorized, token missing' });
+            }
+
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             req.user = decoded;
 
@@ -19,7 +25,8 @@ export const protect = async (req, res, next) => {
 
             return next();
         } catch (error) {
-            console.error('❌ Token Verification Error:', error.message);
+            console.error(`❌ [Auth Error] Token Verification Failed: ${error.message} (IP: ${req.ip})`);
+            
             if (error.name === 'TokenExpiredError') {
                 return res.status(401).json({ message: 'Token expired, please login again' });
             }
