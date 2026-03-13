@@ -81,7 +81,7 @@ const PORT = process.env.PORT || 5000;
 // Connect to MongoDB before starting server
 mongoose
     .connect(process.env.MONGODB_URI, {
-        maxPoolSize: 10,
+        maxPoolSize: 50, // Increased for high concurrency (default is usually 100 on Node driver, but specifically setting 50)
         serverSelectionTimeoutMS: 5000,
         socketTimeoutMS: 45000,
     })

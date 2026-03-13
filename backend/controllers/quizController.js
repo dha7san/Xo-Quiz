@@ -282,6 +282,7 @@ export const startQuiz = async (req, res) => {
             flagEvents: []
         });
 
+        console.log(`🚀 [Quiz] User ${userIdStr} naturally started Quiz: ${actualQuizIdStr}`);
         res.json({ quiz, questions });
     } catch (error) {
         console.error('Error in startQuiz:', error);
@@ -368,6 +369,7 @@ export const submitQuiz = async (req, res) => {
         }
         await QuizState.findOneAndDelete({ userId: req.user.id, quizId: quiz._id });
 
+        console.log(`✅ [Quiz] User ${userIdStr} submitted Quiz: ${actualQuizIdStr} | Score: ${score}/${questions.length}`);
         res.status(201).json({ message: 'Quiz submitted successfully. Results will be published later.', total: questions.length, submission });
     } catch (error) {
         res.status(500).json({ message: 'Error submitting quiz', error: error.message });
