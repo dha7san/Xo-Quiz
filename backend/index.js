@@ -22,7 +22,11 @@ import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import quizRoutes from "./routes/quizRoutes.js";
 
-app.use(cors());
+app.use(cors({
+    origin: process.env.FRONTEND_URL || '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
@@ -46,21 +50,23 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Export app for Vercel
-export default app;
-
-// Start server locally or on traditional VPS
-// (Vercel will ignore this and use the exported app)
-if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-    httpServer.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-    });
-}
-
-// Connect to MongoDB independently
+// Connect to MongoDB before starting server
 mongoose
-    .connect(process.env.MONGODB_URI)
-    .then(() => console.log("Connected to MongoDB"))
-    .catch((error) => console.log("MongoDB connection error:", error));
+    .connect(process.env.MONGODB_URI, {
+        maxPoolSize: 10,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+    })
+    .then(() => {
+        console.log("Connected to MongoDB");
+        // Start server only after DB connects
+        httpServer.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
+        });
+    })
+    .catch((error) => {
+        console.error("MongoDB connection error:", error);
+        process.exit(1);
+    });
 
 

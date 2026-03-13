@@ -20,8 +20,9 @@ const resolveQuiz = async (idOrCode) => {
     }
     
     // Case-insensitive search for the quiz code
+    const escaped = idOrCode.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const quizByCode = await Quiz.findOne({ 
-        quizCode: { $regex: new RegExp(`^${idOrCode.trim()}$`, 'i') } 
+        quizCode: { $regex: new RegExp(`^${escaped}$`, 'i') } 
     });
     
     if (quizByCode) {
@@ -192,13 +193,20 @@ export const startQuiz = async (req, res) => {
         });
 
         // Create QuizState — timer officially starts NOW
-        await QuizState.create({
-            userId: req.user.id, quizId: actualQuizId,
-            answers: {},
-            startedAt: Date.now(),
-            timeRemaining: quiz.duration * 60,
-            lastSavedAt: Date.now()
-        });
+        try {
+            await QuizState.create({
+                userId: req.user.id, quizId: actualQuizId,
+                answers: {},
+                startedAt: Date.now(),
+                timeRemaining: quiz.duration * 60,
+                lastSavedAt: Date.now()
+            });
+        } catch (error) {
+            if (error.code === 11000) {
+                return res.status(400).json({ message: 'Quiz already started. Please resume.' });
+            }
+            throw error;
+        }
 
         res.json({ quiz, questions });
     } catch (error) {
