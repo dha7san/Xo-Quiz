@@ -429,7 +429,7 @@ const AdminDashboard = () => {
                                                 <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--color-text-secondary)', flexWrap: 'wrap' }}>
                                                     <span>🕐 {quiz.duration} min</span>
                                                     <span>🔑 {quiz.quizCode}</span>
-                                                    {quiz.startTime && <span>📅 {new Date(quiz.startTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: true })}</span>}
+                                                    {quiz.startTime && <span>📅 {new Date(quiz.startTime).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</span>}
                                                 </div>
                                             </div>
 
@@ -777,7 +777,7 @@ const AdminDashboard = () => {
                                                 : <span style={{ color: '#1a7a3a', fontSize: 12 }}>✓ Clean</span>}
                                         </td>
                                         <td style={{ padding: '14px 20px', color: 'var(--color-text-tertiary)', fontSize: 12 }}>
-                                            {new Date(r.submittedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', hour12: true })}
+                                            {new Date(r.submittedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
                                         </td>
                                     </tr>
                                 ))}
