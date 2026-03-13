@@ -97,7 +97,13 @@ const MyResults = () => {
                                                 {r.quizId?.title || 'General Quiz'}
                                             </h3>
                                             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-tertiary)' }}>
-                                                {new Date(r.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                                {(() => {
+                                                    try {
+                                                        return new Date(r.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                                                    } catch (e) {
+                                                        return '';
+                                                    }
+                                                })()}
                                             </span>
                                         </div>
                                         

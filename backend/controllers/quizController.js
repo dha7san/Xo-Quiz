@@ -4,7 +4,7 @@ import Question from '../models/Question.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 import QuizState from '../models/QuizState.js';
-import { io } from '../index.js';
+import { getIO } from '../socket.js';
 
 // Helper to find actual Quiz document from either an ID or a human-readable Code
 const resolveQuiz = async (idOrCode) => {
@@ -379,6 +379,7 @@ export const reportFlag = async (req, res) => {
         }
 
         // Emit real-time flag event to admin via Socket.IO
+        const io = getIO();
         if (io) {
             const roomName = `admin:${actualQuizId.toString()}`;
             const roomSize = io.sockets.adapter.rooms.get(roomName)?.size || 0;

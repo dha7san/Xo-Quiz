@@ -5,49 +5,18 @@ import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
 
+import { initSocket } from "./socket.js";
+
 dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
 
-// Initialize Socket.IO before routes
-export const io = new Server(httpServer, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
-});
+// Initialize Socket.IO using the dedicated module
+const io = initSocket(httpServer);
 
 // Also set on app for flexibility
 app.set("io", io);
-
-// Socket.IO connection handling
-io.on("connection", (socket) => {
-    console.log("🔌 Socket connected:", socket.id);
-
-    // Admin joins a room to receive real-time flag updates
-    socket.on("admin:join", (quizId) => {
-        if (!quizId) return;
-        const roomName = `admin:${quizId.toString()}`;
-        socket.join(roomName);
-        console.log(`👤 Admin joined room: ${roomName} (Socket: ${socket.id})`);
-        
-        // Immediate confirmation to admin
-        socket.emit('admin:confirmed', { room: roomName });
-    });
-
-    // Admin leaves room
-    socket.on("admin:leave", (quizId) => {
-        if (!quizId) return;
-        const roomName = `admin:${quizId.toString()}`;
-        socket.leave(roomName);
-        console.log(`👤 Admin left room: ${roomName}`);
-    });
-
-    socket.on("disconnect", (reason) => {
-        console.log(`🔌 Socket disconnected: ${socket.id} (Reason: ${reason})`);
-    });
-});
 
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
