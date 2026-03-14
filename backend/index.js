@@ -46,8 +46,8 @@ app.use(helmet());
 app.use(compression());
 app.use(morgan("combined"));
 
-app.use(express.json({ limit: "50kb" }));
-app.use(express.urlencoded({ limit: "50kb", extended: true }));
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -56,6 +56,14 @@ app.use('/api/admin', adminRoutes);
 
 app.get("/", (req, res) => {
     res.send("Quiz App API is running");
+});
+
+// Handle payload too large errors explicitly
+app.use((err, req, res, next) => {
+    if (err.type === 'entity.too.large') {
+        return res.status(413).json({ message: 'Payload too large. Please use a smaller image (max 5MB).' });
+    }
+    next(err);
 });
 
 // Global Error Handler

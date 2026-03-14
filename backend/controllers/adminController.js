@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import Submission from '../models/Submission.js';
 import QuizState from '../models/QuizState.js';
 import AppSettings from '../models/AppSettings.js';
+import { invalidateQuizCache } from './quizController.js';
 
 // Helper to get or create settings
 const getSettings = async () => {
@@ -46,6 +47,7 @@ export const addQuestion = async (req, res) => {
             image
         });
 
+        invalidateQuizCache(quizId);
         res.status(201).json(newQuestion);
     } catch (error) {
         res.status(500).json({ message: 'Error adding question', error: error.message });
@@ -75,6 +77,7 @@ export const updateQuestion = async (req, res) => {
         
         if (!updatedQuestion) return res.status(404).json({ message: 'Question not found' });
         
+        invalidateQuizCache(updatedQuestion.quizId);
         res.json(updatedQuestion);
     } catch (error) {
         res.status(500).json({ message: 'Error updating question', error: error.message });
@@ -88,6 +91,7 @@ export const deleteQuestion = async (req, res) => {
         
         if (!deletedQuestion) return res.status(404).json({ message: 'Question not found' });
         
+        invalidateQuizCache(deletedQuestion.quizId);
         res.json({ message: 'Question deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Error deleting question', error: error.message });
@@ -114,6 +118,7 @@ export const stopQuiz = async (req, res) => {
 
         quiz.isActive = false;
         await quiz.save();
+        invalidateQuizCache(quizId);
         res.json({ message: 'Quiz stopped successfully', quiz });
     } catch (error) {
         res.status(500).json({ message: 'Error stopping quiz', error: error.message });
@@ -133,6 +138,7 @@ export const deleteQuiz = async (req, res) => {
         await Submission.deleteMany({ quizId });
         await Quiz.findByIdAndDelete(quizId);
 
+        invalidateQuizCache(quizId);
         res.json({ message: 'Quiz and all related data deleted successfully' });
     } catch (error) {
         res.status(500).json({ message: 'Error deleting quiz', error: error.message });
@@ -171,6 +177,7 @@ export const toggleResults = async (req, res) => {
 
         quiz.resultsPublished = !quiz.resultsPublished;
         await quiz.save();
+        invalidateQuizCache(quizId);
         res.json({ message: `Results ${quiz.resultsPublished ? 'published' : 'hidden'} successfully`, quiz });
     } catch (error) {
         res.status(500).json({ message: 'Error toggling results', error: error.message });
@@ -187,6 +194,7 @@ export const toggleLeaderboard = async (req, res) => {
 
         quiz.leaderboardPublished = !quiz.leaderboardPublished;
         await quiz.save();
+        invalidateQuizCache(quizId);
         res.json({ message: `Leaderboard ${quiz.leaderboardPublished ? 'published' : 'hidden'} successfully`, quiz });
     } catch (error) {
         res.status(500).json({ message: 'Error toggling leaderboard', error: error.message });

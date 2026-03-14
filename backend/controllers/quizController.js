@@ -81,6 +81,13 @@ setInterval(flushQueue, 3000); // Drain every 3 seconds
 
 // --- Cache Helpers ---
 
+export const invalidateQuizCache = (quizIdStr) => {
+    if (quizIdStr && quizCache.has(quizIdStr.toString())) {
+        quizCache.delete(quizIdStr.toString());
+        console.log(`🧹 Cache cleared for quiz: ${quizIdStr}`);
+    }
+};
+
 // Resolves and caches quiz metadata and questions to prevent repeated DB reads
 const resolveQuiz = async (idOrCode) => {
     if (!idOrCode) return null;
