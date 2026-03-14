@@ -39,6 +39,46 @@ const quizCache = new Map();
  */
 const activeQuizzes = new Map();
 
+// --- 3. Backend Request Queue for MongoDB Writes ---
+const saveQueue = new Map(); // key: `${userId}:${quizId}`, value: { answers: {}, timeRemaining: number }
+
+const flushQueue = async () => {
+    if (saveQueue.size === 0) return;
+
+    const entries = [...saveQueue.entries()];
+    saveQueue.clear();
+
+    const bulkOps = entries.map(([key, data]) => {
+        const [userId, quizId] = key.split(':');
+        const setPayload = {};
+        for (const [qId, ans] of Object.entries(data.answers)) {
+            setPayload[`answers.${qId}`] = ans;
+        }
+        return {
+            updateOne: {
+                filter: { userId, quizId },
+                update: { 
+                    $set: { 
+                        ...setPayload, 
+                        timeRemaining: data.timeRemaining,
+                        lastSavedAt: new Date() 
+                    } 
+                },
+                upsert: true
+            }
+        };
+    });
+
+    try {
+        await QuizState.bulkWrite(bulkOps, { ordered: false });
+        console.log(`[Queue] Flushed ${bulkOps.length} saves to MongoDB`);
+    } catch (err) {
+        console.error('[Queue] Error flushing to DB:', err);
+    }
+};
+
+setInterval(flushQueue, 3000); // Drain every 3 seconds
+
 // --- Cache Helpers ---
 
 // Resolves and caches quiz metadata and questions to prevent repeated DB reads
@@ -299,10 +339,10 @@ export const saveQuizState = async (req, res) => {
         const actualQuizIdStr = quiz._id.toString();
         const userIdStr = req.user.id.toString();
 
-        // Only save to In-Memory Cache (Blazing Fast, NO DB load)
+        // Update In-Memory Cache (Blazing Fast, NO DB load)
         let userState = await getUserState(actualQuizIdStr, userIdStr);
         if (userState) {
-            userState.answers = answers;
+            userState.answers = { ...userState.answers, ...answers }; // Merge partial answers
             userState.timeRemaining = timeRemaining;
             userState.lastSavedAt = new Date();
         } else {
@@ -318,7 +358,17 @@ export const saveQuizState = async (req, res) => {
             activeQuizzes.get(actualQuizIdStr).users.set(userIdStr, userState);
         }
 
-        res.json({ message: 'Quiz state saved via Cache' });
+        // Add to MongoDB Write Queue
+        if (answers && Object.keys(answers).length > 0) {
+            const queueKey = `${userIdStr}:${actualQuizIdStr}`;
+            const existing = saveQueue.get(queueKey) || { answers: {}, timeRemaining };
+            saveQueue.set(queueKey, {
+                answers: { ...existing.answers, ...answers },
+                timeRemaining
+            });
+        }
+
+        res.status(200).json({ success: true, message: 'Quiz state queued for save' });
     } catch (error) {
         res.status(500).json({ message: 'Error saving quiz state', error: error.message });
     }

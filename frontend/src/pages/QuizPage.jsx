@@ -46,6 +46,7 @@ const QuizPage = () => {
     const [warningMsg, setWarningMsg] = useState('');
     const [isResuming, setIsResuming] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [dirtyAnswers, setDirtyAnswers] = useState({});
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showConfetti, setShowConfetti] = useState(false);
     const [currentQ, setCurrentQ] = useState(0);
@@ -54,11 +55,13 @@ const QuizPage = () => {
     const flagCountRef  = useRef(0);
     const quizStartedRef = useRef(false);
     const answersRef    = useRef({});
+    const dirtyAnswersRef = useRef({});
     const submittingRef = useRef(false);
     const resultRef     = useRef(null);
     const warningTimer  = useRef(null);
 
     useEffect(() => { answersRef.current    = answers;    }, [answers]);
+    useEffect(() => { dirtyAnswersRef.current = dirtyAnswers; }, [dirtyAnswers]);
     useEffect(() => { quizStartedRef.current = quizStarted; }, [quizStarted]);
     useEffect(() => { submittingRef.current  = submitting;  }, [submitting]);
     useEffect(() => { resultRef.current      = result;      }, [result]);
@@ -124,18 +127,25 @@ const QuizPage = () => {
         return () => clearInterval(t);
     }, [quizStarted, submitting, result]); // ✅ no timeLeft dep — interval is stable
 
-    /* Auto-save every 10s — reads timeLeft via ref so interval never resets */
+    /* Auto-save every 25s-35s — reads timeLeft via ref so interval never resets */
     useEffect(() => {
         if (!quizStarted || submitting || result) return;
+        
+        // Spread saves between 25s–35s to prevent burst writes
+        const randomDelay = 25000 + Math.random() * 10000;
+        
         const t = setInterval(async () => {
+            if (Object.keys(dirtyAnswersRef.current).length === 0) return; // Nothing changed, skip save
             try {
                 setIsSaving(true);
                 await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/save`,
-                    { quizId: quiz?._id || quizCode, answers: answersRef.current, timeRemaining: timeLeftRef.current },
+                    { quizId: quiz?._id || quizCode, answers: dirtyAnswersRef.current, timeRemaining: timeLeftRef.current },
                     { headers: { Authorization: `Bearer ${user.token}` } }
                 );
-            } catch (err) { /* Silent fail for auto-save */ } finally { setTimeout(() => setIsSaving(false), 600); }
-        }, 10000);
+                // Clear dirty tracker after successful save
+                setDirtyAnswers({});
+            } catch (err) { /* Silent fail for auto-save, keeps dirtyAnswers for next try */ } finally { setTimeout(() => setIsSaving(false), 600); }
+        }, randomDelay);
         return () => clearInterval(t);
     }, [quizStarted, submitting, result, quizCode, quiz?._id, user.token]); // ✅ no timeLeft dep
 
@@ -206,16 +216,10 @@ const QuizPage = () => {
         }
     };
 
-    const handleOptionSelect = async (questionId, option) => {
+    const handleOptionSelect = (questionId, option) => {
         const newAnswers = { ...answers, [questionId]: option };
         setAnswers(newAnswers);
-        try {
-            setIsSaving(true);
-            await axios.post(`${import.meta.env.VITE_API_URL}/api/quiz/save`,
-                { quizId: quiz?._id || quizCode, answers: newAnswers, timeRemaining: timeLeft },
-                { headers: { Authorization: `Bearer ${user.token}` } }
-            );
-        } catch { } finally { setTimeout(() => setIsSaving(false), 600); }
+        setDirtyAnswers(prev => ({ ...prev, [questionId]: option }));
     };
 
     const handleSubmit = async (force = false) => {
@@ -298,7 +302,7 @@ const QuizPage = () => {
                         <li>Do <strong>not</strong> switch tabs or minimize window</li>
                         <li><strong>3 flags = automatic submission</strong></li>
                         <li>Your activity is monitored in real-time</li>
-                        <li>Answers auto-save every 10 seconds</li>
+                        <li>Answers auto-save every 30 seconds</li>
                     </ul>
                 </div>
                 <button className="btn btn-primary btn-full" style={{ padding: 15, fontSize: 16 }} onClick={handleStartQuiz} disabled={isStarting}>
